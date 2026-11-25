@@ -1,6 +1,5 @@
 /* Verify a real Android app UID socket and its separate SOCKS peer on loopback. */
 #include <arpa/inet.h>
-#include <grp.h>
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,14 +36,14 @@ static int upstream(void) {
 }
 
 int main(int argc, char **argv) {
-    if (argc != 2) return 2;
-    if (!strcmp(argv[1], "--upstream")) return upstream();
-    uid_t uid = strcmp(argv[1], "selected") == 0 ? 10123 : 10124;
-    gid_t inet_group = 3003;
-    if (setgroups(1, &inet_group) || setgid(uid) || setuid(uid)) return 2;
+    if (argc == 2 && !strcmp(argv[1], "--upstream")) return upstream();
+    if (argc != 3 || strcmp(argv[1], "--client") || getuid() != (uid_t)strtoul(argv[2], NULL, 10)) {
+        fputs("unexpected client UID or arguments\n", stderr);
+        return 2;
+    }
     alarm(8);
     int sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock < 0) return 2;
+    if (sock < 0) { perror("app socket"); return 2; }
     struct sockaddr_in dst = { .sin_family = AF_INET, .sin_port = htons(19437) };
     if (inet_pton(AF_INET, "8.8.4.4", &dst.sin_addr) != 1) return 2;
     if (connect(sock, (struct sockaddr *)&dst, sizeof dst)) { perror("app connect"); return 1; }
