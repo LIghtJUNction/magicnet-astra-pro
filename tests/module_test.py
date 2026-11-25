@@ -114,6 +114,72 @@ class Module(unittest.TestCase):
         self.assertFalse((self.state / "enabled").exists())
         pending.unlink()
 
+    def test_boot_restores_scoped_dns_before_named_upstream_fails(self):
+        self.cli("configure", "socks5://node.example:443")
+        scope = self.state / "traffic-scope"
+        scope.write_text("tether hotspot0\nuid 10123\n")
+        enabled = self.state / "enabled"
+        enabled.touch()
+        fake = self.state / "xt"
+        fake.mkdir()
+        # Record the actual restore input. Publish a previous -S snapshot to
+        # exercise cleanup using the installed private chains and hooks.
+        script = """#!/bin/sh
+name=${0##*/}
+case $name in
+  *-restore)
+    family=${name%-restore}
+    plan="$MAGICNET_STATE_DIR/$family.plan"
+    cat > "$plan"
+    table=$(sed -n '1s/^\\*//p' "$plan")
+    cat "$plan" > "$MAGICNET_STATE_DIR/$family.$table.tx"
+    awk '$1=="-N" || $1=="-A" {print}
+         $1=="-I" {print "-A",$2,$4,$5}' "$plan" > "$MAGICNET_STATE_DIR/$family.$table.rules";;
+  *)
+    rules="$MAGICNET_STATE_DIR/$name.$2.rules"
+    [ ! -e "$rules" ] || cat "$rules";;
+esac
+"""
+        for name in ("iptables", "ip6tables", "iptables-restore", "ip6tables-restore"):
+            tool = fake / name
+            tool.write_text(script)
+            tool.chmod(0o755)
+
+        def expect_withdrawal():
+            for family in ("iptables", "ip6tables"):
+                tx = (self.state / f"{family}.filter.tx").read_text()
+                for hook in ("OUTPUT", "INPUT", "FORWARD"):
+                    self.assertIn(f"-D {hook} -j MNAP_RGD_{hook}", tx)
+                    self.assertIn(f"-X MNAP_RGD_{hook}", tx)
+
+        with socket.socket() as dns, concurrent.futures.ThreadPoolExecutor(1) as workers:
+            dns.bind(("127.0.0.1", 0))
+            dns.listen()
+            dns.settimeout(6)
+            env = {**self.env, "PATH": f"{fake}:{self.env['PATH']}",
+                   "MAGICBOX_RESOLVER": f"tls://127.0.0.1:{dns.getsockname()[1]}?server_name=resolver.example"}
+            for operation in ("stop", "uninstall"):
+                enabled.touch()
+                boot = workers.submit(self.cli, "boot", env=env, success=False)
+                conn, _ = dns.accept()
+                with conn:
+                    self.assertTrue(conn.recv(1))  # actual TLS ClientHello
+                    for family in ("iptables", "ip6tables"):
+                        tx = (self.state / f"{family}.filter.tx").read_text()
+                        self.assertIn("--uid-owner 10123 -p udp --dport 53 -j DROP", tx)
+                        self.assertIn("-i hotspot0 -p tcp --dport 853 -j DROP", tx)
+                self.assertIn("start_failed", boot.result(timeout=10).stderr)
+                self.assertTrue(enabled.exists())
+                self.assertEqual(scope.read_text(), "tether hotspot0\nuid 10123\n")
+                for family in ("iptables", "ip6tables"):
+                    self.assertIn("MNAP_RGD_OUTPUT", (self.state / f"{family}.filter.rules").read_text())
+                self.cli(operation, env=env)
+                expect_withdrawal()
+                self.assertFalse(enabled.exists())
+                self.assertEqual(scope.exists(), operation == "stop")
+                self.cli("boot", env=env)
+                self.assertFalse((self.state / "pid").exists())
+
     def test_stale_pid_never_signalled(self):
         self.state.mkdir()
         with subprocess.Popen(["sleep", "20"]) as foreign:

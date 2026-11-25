@@ -82,7 +82,13 @@ case $cmd in
     stop) traffic_suspend && stop_core && rm -f "$state/enabled"; exit;;
     traffic) traffic_manage "$@"; exit;;
     dns) dns_manage "$@"; exit;;
-    boot) dns_manage sync && { [ ! -f "$state/enabled" ] || start_services; }; exit;;
+    boot)
+        # Reinstall the enabled scope before an upstream lookup can block
+        # or fail. Independent DNS settings also get a restore attempt.
+        guard_ready=yes
+        if [ -f "$state/enabled" ]; then traffic_sync guard || guard_ready=no; fi
+        dns_manage sync && [ "$guard_ready" = yes ] && { [ ! -f "$state/enabled" ] || start_services; }
+        exit;;
     uninstall)
         if [ -e "$state/dns-scope" ] || [ -e "$state/dns-next" ]; then dns_manage clear || exit 1; fi
         if traffic_chosen; then traffic_manage clear || exit 1; fi

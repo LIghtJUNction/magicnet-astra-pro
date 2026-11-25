@@ -83,7 +83,10 @@ traffic_sync() {
     if [ -f "$state/traffic-next" ]; then cp "$state/traffic-next" "$work/scope" || return 1
     elif [ -s "$state/traffic-scope" ]; then cp "$state/traffic-scope" "$work/scope" || return 1
     else return 0; fi
-    traffic_install
+    case ${1:-route} in
+        guard) firewall_commit guard filter no;;
+        route) traffic_install;;
+    esac
 }
 
 start_services() {
