@@ -98,7 +98,7 @@ def run(archive, busybox):
             assert "state=running" in guest.sh(ctl + "status")
             pid = guest.sh(f"cat {guest.path}/state/pid")
             guest.sh(ctl + "configure " + endpoint)
-            guest.sh(ctl + "configure socks5://unresolved.test:42", success=False)
+            guest.sh(ctl + "configure socks5://bad..name:42", success=False)
             assert pid == guest.sh(f"cat {guest.path}/state/pid")
             for proto in ["http", "socks"]:
                 with socket.create_connection(("127.0.0.1",local),timeout=20) as client:

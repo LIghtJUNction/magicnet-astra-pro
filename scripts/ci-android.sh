@@ -28,3 +28,5 @@ sh tests/android-firewall.sh
 ndk="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
 "$ndk/x86_64-linux-android23-clang" -Os -Wall -Wextra -Werror tests/udp-probe.c -o "$RUNNER_TEMP/magicnet-udp-probe"
 python3 tests/android_udp.py /data/local/tmp/mna-install/bin/magicbox "$RUNNER_TEMP/magicnet-udp-probe"
+"$ndk/x86_64-linux-android23-clang" -Os -Wall -Wextra -Werror tests/route-probe.c -o "$RUNNER_TEMP/magicnet-route-probe"
+python3 tests/android_traffic.py /data/local/tmp/mna-install "$RUNNER_TEMP/magicnet-route-probe"
