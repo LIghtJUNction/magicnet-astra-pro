@@ -17,7 +17,7 @@
 | Unix / Android 交付 | shell CLI，原生 Web 文件，单 ABI KAM 打包与文件核对。ZIP 差分重建需可信目标 SHA-256 | 自动在线升级、旧版状态迁移和新项目 GitHub Actions 均有独立验收条件 |
 | 性能 | 两个二进制各七个进程，记录 RSS、吞吐和往返分位数 | 当前 Linux 构建、单 TCP 回环负载、无外部规则，详细条件见核心源树 docs/bench-qemu.json |
 
-API 23 的首轮 Android 结果早于 Shadowsocks TCP、SOCKS5 UDP 和独立 cgroup 守卫打包。API 35 的 SELinux Enforcing 环境拒绝独立进程挂接 eBPF cgroup hook 10，返回 EPERM。模块的 xtables 路径单独验证。API 35 另有独立实测，记录随审阅包分发。API 29、35 的 GitHub 工作流文件可随仓库提交触发。正式发布需要同一源码提交及同一安装包在对应环境获得结果。
+API 23 的首轮 Android 结果早于 Shadowsocks TCP、SOCKS5 UDP 和独立 cgroup 守卫打包。API 35 的 SELinux Enforcing 环境拒绝独立进程挂接 eBPF cgroup hook 10，返回 EPERM。模块的 xtables 路径单独验证。API 35 最终 x86_64 包 SHA-256 为 `c5a83322601c20bcbed21e210a211d972a8107c2664e826a76c6f4f8cf7472a4`，完整重放和真实差分重建均通过。安装后，冷启动的服务钩子先恢复选定范围的 DNS 过滤，再启动上游。钩子执行之前的流量单独计入启动覆盖边界。API 29、35 的 GitHub 工作流文件可随仓库提交触发。正式发布需要同一源码提交及同一安装包在对应环境获得结果。
 
 ## 对照范围
 
