@@ -14,8 +14,12 @@ class Guest:
             raise RuntimeError("select a disposable AVD using ANDROID_SERIAL")
 
     def adb(self, *args):
-        return subprocess.run(["adb", "-s", os.environ["ANDROID_SERIAL"], *args], check=True,
-                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=180).stdout.decode().replace("\r","")
+        result = subprocess.run(["adb", "-s", os.environ["ANDROID_SERIAL"], *args],
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=180)
+        output = result.stdout.decode(errors="replace").replace("\r", "")
+        if result.returncode:
+            raise RuntimeError(f"adb {args[0]} returned {result.returncode}: {output.strip()}")
+        return output
 
     def sh(self, command, success=True):
         # Android 6 shell transport can report zero even when the guest failed.
@@ -32,5 +36,10 @@ class Guest:
         self.sh(f"mkdir -m 700 {self.path}")
         return self
 
-    def __exit__(self, *exc):
-        self.sh(f"rm -rf {self.path}")
+    def __exit__(self, _kind, exception, _traceback):
+        try:
+            self.sh(f"rm -rf {self.path}")
+        except (RuntimeError, subprocess.SubprocessError) as error:
+            if exception is None:
+                raise
+            exception.add_note(f"Guest cleanup also failed: {error}")

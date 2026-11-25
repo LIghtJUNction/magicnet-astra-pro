@@ -24,3 +24,7 @@ adb push "$tools/busybox" /data/local/tmp/busybox
 adb push dist/magicnet-x86_64.zip /data/local/tmp/module.zip
 adb shell 'chmod 755 /data/local/tmp/busybox && mkdir -p /data/local/tmp/mna-install && cd /data/local/tmp/mna-install && /data/local/tmp/busybox unzip -oq /data/local/tmp/module.zip'
 sh tests/android-firewall.sh
+
+ndk="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+"$ndk/x86_64-linux-android23-clang" -Os -Wall -Wextra -Werror tests/udp-probe.c -o "$RUNNER_TEMP/magicnet-udp-probe"
+python3 tests/android_udp.py /data/local/tmp/mna-install/bin/magicbox "$RUNNER_TEMP/magicnet-udp-probe"

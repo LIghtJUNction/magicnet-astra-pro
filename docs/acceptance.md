@@ -11,11 +11,12 @@
 | Linux 网络命名空间 | TCP/UDP 与 IPv4/IPv6，DNS 端口与对照端口，其他 UID 隔离、故障回滚；经虚拟热点接口转发 | 验证内核规则的效果，全设备流量路径仍需端到端验证 |
 | Linux cgroup v2 | 独立内核 eBPF 守卫，144 个套接字结果，正常与异常退出、自有链接清理 | 单独 cgroup 及其后代。53 和 853 的控制范围不包含应用自定义 DoH |
 | Android 6 API 23 x86_64 | 在实际 Android 来宾运行 KAM、BusyBox、模块和较早的核心；真实 TLS 1.3 上游，SOCKS5/HTTP CONNECT 各 256 KiB 回显；规则命中、重复应用、坏配置和五轮启停。另测 Android 防火墙 | KAM 包 SHA-256 为 `0a2d09c139f915151c72172118205b995cce70971cb4fca5e749a9aea2d53ad8`。只将这些证据归于当时构建。Android 用户空间服务精简运行，未加载真实手机管理器 |
+| Android 15 API 35 x86_64 | KAM 0.6.16 在来宾内打包。SOCKS5 和 HTTP CONNECT 各完成 256 KiB 双向转发，TLS 1.3；实际规则命中、坏配置保留、重复应用和五轮启停通过。另用两个 Android UDP 进程验证域名数据报回显与控制连接关闭，Android 双栈 DNS 防火墙测试通过 | AOSP userdebug，软件 CPU，zygote 停止。未验证实际管理器和蜂窝上网；ARM64 包已在来宾打包，尚未在 ARM64 来宾执行 |
 | Chromium | 320、390、768、1280 像素宽，三种语言，真实 DOM，模拟 KernelSU 调用接口 | Android 实机管理器、TalkBack 与软键盘仍需独立测试 |
 | Unix / Android 交付 | shell CLI，原生 Web 文件，单 ABI KAM 打包与文件核对。ZIP 差分重建需可信目标 SHA-256 | 自动在线升级、旧版状态迁移和新项目 GitHub Actions 均有独立验收条件 |
 | 性能 | 两个二进制各七个进程，记录 RSS、吞吐和往返分位数 | 当前 Linux 构建、单 TCP 回环负载、无外部规则，详细条件见核心源树 docs/bench-qemu.json |
 
-第一份本地 Android 结果早于 Shadowsocks TCP、SOCKS5 UDP、独立 cgroup 守卫打包等改动。API 29、35 的工作流文件可随仓库提交触发。正式发布需要同一源码提交及同一安装包在对应环境获得结果。
+第一份本地 Android 结果早于 Shadowsocks TCP、SOCKS5 UDP、独立 cgroup 守卫打包等改动。API 35 另有独立实测，记录随审阅包分发。API 29、35 的 GitHub 工作流文件可随仓库提交触发。正式发布需要同一源码提交及同一安装包在对应环境获得结果。
 
 ## 对照范围
 

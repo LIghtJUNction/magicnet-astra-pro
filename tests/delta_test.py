@@ -1,5 +1,4 @@
 import hashlib
-import importlib.util
 from pathlib import Path
 import subprocess
 import tempfile
@@ -16,10 +15,14 @@ class Delta(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             p=Path(d)
             core=os.urandom(100000)
-            for name,ui in (("old",b"v1"),("new",b"v2")):
-                with zipfile.ZipFile(p/name,"w",zipfile.ZIP_DEFLATED) as z:
-                    z.writestr("bin/magicbox",core)
-                    z.writestr("webroot/app.js",ui)
+            for day, (name, ui) in enumerate((("old", b"v1"), ("new", b"v2")), 1):
+                files = [("bin/magicbox", core), ("webroot/app.js", ui)]
+                if day == 2:
+                    files.reverse()
+                with zipfile.ZipFile(p / name, "w") as z:
+                    for filename, body in files:
+                        info = zipfile.ZipInfo(filename, (2026, 11, day, 12, 24, 0))
+                        z.writestr(info, body, compress_type=zipfile.ZIP_DEFLATED)
             subprocess.run(["python3",ROOT/"scripts/delta.py",p/"old",p/"new",p/"delta"],check=True)
             sha=hashlib.sha256((p/"new").read_bytes()).hexdigest()
             def apply(expected):
