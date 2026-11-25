@@ -1,5 +1,6 @@
 """Exercise the actual KAM ZIP on an Android emulator with synthetic upstreams."""
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -8,6 +9,7 @@ import ssl
 import subprocess
 import tempfile
 import threading
+import time
 import zipfile
 from android_guest import Guest
 
@@ -34,6 +36,49 @@ def headers(sock):
     return bytes(data)
 
 
+def test_certificates(work, guest_epoch):
+    def openssl(*args):
+        subprocess.run(["openssl", *args], cwd=work, check=True, capture_output=True, timeout=20)
+
+    # A freshly booted AVD may trail the runner's wall clock. Rustls checks
+    # notBefore against guest time, while OpenSSL creates certificates on the host.
+    host_epoch = int(time.time())
+    stamp = lambda t: datetime.fromtimestamp(t, timezone.utc).strftime("%Y%m%d%H%M%SZ")
+    dates = ["-startdate", stamp(min(host_epoch, guest_epoch) - 86400),
+             "-enddate", stamp(max(host_epoch, guest_epoch) + 86400)]
+    (work / "index").touch()
+    (work / "serial").write_text("01\n")
+    (work / "ca.cnf").write_text("""[ca]
+default_ca=fixture
+[fixture]
+database=index
+new_certs_dir=.
+serial=serial
+default_md=sha256
+policy=names
+[names]
+commonName=supplied
+[root]
+basicConstraints=critical,CA:TRUE
+keyUsage=critical,keyCertSign,cRLSign
+[server]
+basicConstraints=critical,CA:FALSE
+keyUsage=digitalSignature
+extendedKeyUsage=serverAuth
+subjectAltName=DNS:relay.test
+""")
+    for label, subject in [("ca", "MagicNet test CA"), ("relay", "relay.test")]:
+        openssl("req", "-new", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256",
+                "-nodes", "-subj", f"/CN={subject}", "-keyout", f"{label}.key", "-out", f"{label}.csr")
+    common = ["ca", "-batch", "-notext", "-config", "ca.cnf", "-keyfile", "ca.key", *dates]
+    openssl(*common, "-selfsign", "-in", "ca.csr", "-out", "ca.pem", "-extensions", "root")
+    openssl(*common, "-cert", "ca.pem", "-in", "relay.csr", "-out", "relay.pem", "-extensions", "server")
+    openssl("verify", "-attime", str(guest_epoch), "-verify_hostname", "relay.test",
+            "-purpose", "sslserver", "-CAfile", "ca.pem", "relay.pem")
+    print(f"TLS fixture verified at Android time {guest_epoch}, runner time {host_epoch}", flush=True)
+    return work / "ca.pem", work / "relay.pem", work / "relay.key"
+
+
 def run(archive, busybox):
     with zipfile.ZipFile(archive) as z:
         blocked = z.read("rules/block.txt").decode().splitlines()[1]
@@ -44,22 +89,8 @@ def run(archive, busybox):
         guest.adb("push", str(archive), f"{guest.path}/candidate.zip")
         guest.adb("push", str(busybox), f"{guest.path}/busybox")
         guest.sh(f"cd {guest.path} && chmod 755 busybox && ./busybox unzip -oq candidate.zip && chmod 755 cli bin/magicbox")
-        cert = Path(tmp, "ca.pem")
-        key = Path(tmp, "key.pem")
-        def openssl(*args):
-            subprocess.run(["openssl", *args], check=True, capture_output=True, timeout=20)
-        cakey = Path(tmp, "ca.key")
-        csr = Path(tmp, "server.csr")
-        leaf = Path(tmp, "server.pem")
-        ext = Path(tmp, "extensions")
-        ext.write_text("basicConstraints=critical,CA:FALSE\nkeyUsage=digitalSignature\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:relay.test\n")
-        openssl("req","-x509","-newkey","ec","-pkeyopt","ec_paramgen_curve:P-256",
-                "-nodes","-days","2","-subj","/CN=Test CA","-addext","basicConstraints=critical,CA:TRUE",
-                "-keyout",cakey,"-out",cert)
-        openssl("req","-new","-newkey","ec","-pkeyopt","ec_paramgen_curve:P-256",
-                "-nodes","-subj","/CN=relay.test","-keyout",key,"-out",csr)
-        openssl("x509","-req","-in",csr,"-CA",cert,"-CAkey",cakey,"-CAcreateserial",
-                "-days","2","-extfile",ext,"-out",leaf)
+        guest_epoch = int(guest.sh("date +%s"))
+        cert, leaf, key = test_certificates(Path(tmp), guest_epoch)
         guest.adb("push", str(cert), f"{guest.path}/ca.pem")
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.minimum_version = ssl.TLSVersion.TLSv1_3
@@ -72,6 +103,8 @@ def run(archive, busybox):
         local = int(guest.adb("forward","tcp:0","tcp:1080"))
         observed = []
         errors = []
+        hello_names = []
+        context.set_servername_callback(lambda _sock, name, _ctx: hello_names.append(name))
 
         def relay():
             try:
@@ -105,7 +138,7 @@ def run(archive, busybox):
                     if proto == "http":
                         client.sendall(f"CONNECT {DOMAIN}:443 HTTP/1.1\r\nHost: {DOMAIN}:443\r\n\r\n".encode())
                         reply = headers(client)
-                        assert reply.split()[1] == b"200", (reply, errors)
+                        assert reply.split()[1] == b"200", (reply, errors, hello_names, guest.sh("date +%s"))
                     else:
                         client.sendall(b"\x05\x01\x00")
                         assert exact(client,2) == b"\x05\x00"

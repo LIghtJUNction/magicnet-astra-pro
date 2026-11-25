@@ -16,7 +16,9 @@ def installed_clients(guest, probe):
                        if all(s.isdecimal() for s in p.name.split("."))),
                       key=lambda p: tuple(map(int, p.name.split("."))))
     tools = versions[-1]
-    platform = sdk / "platforms/android-35/android.jar"
+    platforms = [p for p in (sdk / "platforms").glob("android-*/android.jar")
+                 if p.parent.name[8:].isdigit()]
+    platform = max(platforms, key=lambda p: int(p.parent.name[8:]))
     with tempfile.TemporaryDirectory() as tmp, ExitStack() as cleanup:
         directory = Path(tmp)
         key = directory / "test.p12"
