@@ -1,8 +1,17 @@
 # Append after other NAT hooks. The first terminal rule of an existing NAT
 # policy keeps precedence. Only matching UIDs and tether ingress can redirect.
-function redirect_rules(c,i,     n,j,skip,devices,target) {
+function redirect_rules(c,i,     n,j,skip,devices,target,route,rc,local_count) {
     print "-A " c " ! -p tcp -j RETURN"
-    print "-A " c " -m addrtype --dst-type LOCAL -j RETURN"
+    if (hook[i]=="INPUT") return
+    if (hook[i]=="OUTPUT") print "-A " c " -o lo -j RETURN"
+    if (hook[i]=="PREROUTING") {
+        while ((rc=(getline route < local_routes))>0) {
+            print "-A " c " -d " route " -j RETURN"
+            local_count++
+        }
+        if (rc<0 || !local_count) exit 2
+        close(local_routes)
+    }
     print "-A " c " -p tcp --dport 53 -j RETURN"
     print "-A " c " -p tcp --dport 853 -j RETURN"
     if (family=="iptables") {

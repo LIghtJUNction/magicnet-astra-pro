@@ -76,11 +76,16 @@ firewall_commit() {
     families='iptables ip6tables'
     if [ "$policy" = traffic ] && [ "${traffic_mode:-}" = ipv4-redirect-ipv6-block ]; then families=iptables; fi
     for family in $families; do
+        local_routes=
+        if [ "$policy" = traffic ] && grep -q '^tether ' "$work/scope"; then
+            local_routes="$work/$family.local"
+            traffic_local_routes "$family" "$local_routes" || return 1
+        fi
         command -v "$family-restore" >/dev/null &&
             dns_xt /dev/null "$family" -t "$table" -S > "$work/$family.snapshot" ||
             { error firewall_unavailable; return 1; }
         for undo in 0 1; do
-            awk -v undo="$undo" -v policy="$policy" -v family="$family" -v upstream="${bypass_ip:-}" \
+            awk -v undo="$undo" -v policy="$policy" -v family="$family" -v local_routes="$local_routes" -v upstream="${bypass_ip:-}" \
                 -f "$root/lib/firewall-restore.awk" -f "$root/lib/traffic-rules.awk" "$work/scope" "$work/$family.snapshot" \
                 > "$work/$family.$undo" || { error firewall_ownership_conflict; return 1; }
         done

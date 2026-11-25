@@ -1,5 +1,14 @@
 traffic_chosen() { [ -e "$state/traffic-next" ] || [ -s "$state/traffic-scope" ]; }
 
+traffic_local_routes() {
+    case $1 in iptables) af=-4;; ip6tables) af=-6;; *) return 1;; esac
+    ip_tool=/system/bin/ip
+    if [ ! -x "$ip_tool" ]; then ip_tool=$(command -v ip) || { error local_routes_unavailable; return 1; }; fi
+    "$ip_tool" "$af" route show table local type local > "$work/kernel-routes" &&
+        awk -v family="$1" -f "$root/lib/local-routes.awk" "$work/kernel-routes" > "$2" ||
+        { error local_routes_unavailable; return 1; }
+}
+
 traffic_restore_intent() {
     [ "$remember" = yes ] || return 0
     if [ -e "$work/traffic-prior" ]; then

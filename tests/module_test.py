@@ -180,6 +180,54 @@ esac
                 self.cli("boot", env=env)
                 self.assertFalse((self.state / "pid").exists())
 
+    def test_numeric_local_routes_replace_addrtype_for_tether(self):
+        self.cli("configure", "socks5://127.0.0.1:17014")
+        self.cli("start")
+        fake = self.state / "xt"
+        fake.mkdir()
+        env = {**self.env, "PATH": f"{fake}:{self.env['PATH']}"}
+        for name in ("iptables", "ip6tables", "iptables-restore", "ip6tables-restore"):
+            tool = fake / name
+            # Reject a dependency on the unsupported kernel extension.
+            tool.write_text("""#!/bin/sh
+case "${0##*/}" in
+  *-restore) family=${0##*/}; family=${family%-restore}; tmp="$MAGICNET_STATE_DIR/plan"
+    cat > "$tmp"; table=$(sed -n '1s/^\\*//p' "$tmp")
+    if grep -q addrtype "$tmp"; then exit 42; fi
+    cp "$tmp" "$MAGICNET_STATE_DIR/$family.$table.tx";;
+esac
+""")
+            tool.chmod(0o755)
+        ip = fake / "ip"
+        ip.write_text("""#!/bin/sh
+[ "$*" = "$1 route show table local type local" ] || exit 42
+case $1 in -4) cat "$MAGICNET_STATE_DIR/v4";; -6) cat "$MAGICNET_STATE_DIR/v6";; *) exit 42;; esac
+""")
+        ip.chmod(0o755)
+        (self.state / "v4").write_text("local 127.0.0.0/8 dev lo proto kernel scope host\n"
+                                       "local 93.184.216.34 dev wlan0 proto kernel scope host\n")
+        (self.state / "v6").write_text("local ::1 dev lo proto kernel metric 0 pref medium\n"
+                                       "local 2606:4700::bd dev wlan0 proto kernel metric 0 pref medium\n")
+        self.cli("traffic", "apply", "uid:10123", "tether:hotspot0", env=env)
+        for family, address in [("iptables", "93.184.216.34"), ("ip6tables", "2606:4700::bd")]:
+            nat = (self.state / f"{family}.nat.tx").read_text()
+            self.assertIn("-A MNAP_TCP_OUTPUT -o lo -j RETURN", nat)
+            self.assertLess(nat.index(f"-A MNAP_TCP_PREROUTING -d {address} -j RETURN"),
+                            nat.index("-A MNAP_TCP_PREROUTING -p tcp -i hotspot0 -j REDIRECT"))
+        chosen = self.state / "traffic-scope"
+        previous = chosen.read_text()
+        # Refuse unusable snapshots without replacing the saved policy.
+        for bad in ["", "local hostname.example dev wlan0", "local 1:::2 dev lo",
+                    "local ::1/900 dev lo", "local :::1 dev lo", "local 1:2:3:4:5:6:7:8:9 dev lo"]:
+            (self.state / "v6").write_text(bad + "\n")
+            rejected = self.cli("traffic", "apply", "tether:hotspot1", env=env, success=False)
+            self.assertIn("local_routes_unavailable", rejected.stderr)
+            self.assertEqual(chosen.read_text(), previous)
+        ip.write_text("#!/bin/sh\nexit 42\n")
+        self.cli("traffic", "apply", "tether:hotspot1", env=env, success=False)
+        self.cli("traffic", "apply", "uid:10123", env=env)  # OUTPUT needs no snapshot
+        self.cli("traffic", "clear", env=env)
+
     def test_stale_pid_never_signalled(self):
         self.state.mkdir()
         with subprocess.Popen(["sleep", "20"]) as foreign:
