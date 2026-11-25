@@ -8,21 +8,22 @@
 | --- | --- | --- |
 | Linux 主机 | Rust lint、单元、黑盒 TCP、HTTPS 引导、DoT、三个 SOCKS5 UDP 用例组 | 显式使用代理的应用。UDP 通过 SOCKS5 上游，带域名的数据报要求应用保留域名 |
 | Linux 虚拟机 | 以 Debian shadowsocks-libev 为对端，三个 SIP004 AEAD 方法，双入口、传输、错误密码 | 支持 TCP 客户端。连接阶段没有来自 Shadowsocks 服务器的目标成功回执 |
-| Linux 网络命名空间 | TCP/UDP 与 IPv4/IPv6，DNS 端口与对照端口，其他 UID 隔离、故障回滚；经虚拟热点接口转发 | 验证内核规则的效果，全设备流量路径仍需端到端验证 |
+| Linux 网络命名空间 | 指定 UID 与热点接口的 IPv4/IPv6 透明 TCP 交付原始目标，验证半关闭后回包。测试独立 DNS 范围、其他 UID、常见 VPN 出口、外部防火墙链保留，以及不可用 IPv6 NAT 的回退 | 使用实际内核和隔离的虚拟客户端。透明 TCP 取得目标 IP 与端口，无法恢复应用解析前的域名；蜂窝切换、实际 Tailnet 和 WARP 接入另验 |
+| 域名节点 | 经数字 IP 引导的 DoT 成功与失败、证书错误、单次解析复用、5 秒超时；4 项 DNS wire 单测和独立 no_std 消费程序离线构建 | 域名上游选定并固定经过验证的公网地址到下次启动。显式数字 IP 可指定内网节点 |
 | Linux cgroup v2 | 独立内核 eBPF 守卫，144 个套接字结果，正常与异常退出、自有链接清理 | 单独 cgroup 及其后代。53 和 853 的控制范围不包含应用自定义 DoH |
 | Android 6 API 23 x86_64 | 在实际 Android 来宾运行 KAM、BusyBox、模块和较早的核心；真实 TLS 1.3 上游，SOCKS5/HTTP CONNECT 各 256 KiB 回显；规则命中、重复应用、坏配置和五轮启停。另测 Android 防火墙 | KAM 包 SHA-256 为 `0a2d09c139f915151c72172118205b995cce70971cb4fca5e749a9aea2d53ad8`。只将这些证据归于当时构建。Android 用户空间服务精简运行，未加载真实手机管理器 |
-| Android 15 API 35 x86_64 | KAM 0.6.16 在来宾内打包。SOCKS5 和 HTTP CONNECT 各完成 256 KiB 双向转发，TLS 1.3；实际规则命中、坏配置保留、重复应用和五轮启停通过。另用两个 Android UDP 进程验证域名数据报回显与控制连接关闭，Android 双栈 DNS 防火墙测试通过 | AOSP userdebug，软件 CPU，zygote 停止。未验证实际管理器和蜂窝上网；ARM64 包已在来宾打包，尚未在 ARM64 来宾执行 |
+| Android 15 API 35 x86_64 | KAM 0.6.16 在来宾内打包。SOCKS5 和 HTTP CONNECT 各完成 256 KiB 双向转发，TLS 1.3；实际规则命中、坏配置保留、重复应用和五轮启停通过。另用两个 Android UDP 进程验证域名数据报回显与控制连接关闭，Android 双栈 DNS 防火墙测试通过 | AOSP userdebug，软件 CPU，zygote 停止。UID 采用真实内核身份，探针通过本机隔离接口发包。实际管理器和蜂窝上网仍待验证。ARM64 包已在来宾打包，尚未在 ARM64 来宾执行 |
 | Chromium | 320、390、768、1280 像素宽，三种语言，真实 DOM，模拟 KernelSU 调用接口 | Android 实机管理器、TalkBack 与软键盘仍需独立测试 |
 | Unix / Android 交付 | shell CLI，原生 Web 文件，单 ABI KAM 打包与文件核对。ZIP 差分重建需可信目标 SHA-256 | 自动在线升级、旧版状态迁移和新项目 GitHub Actions 均有独立验收条件 |
 | 性能 | 两个二进制各七个进程，记录 RSS、吞吐和往返分位数 | 当前 Linux 构建、单 TCP 回环负载、无外部规则，详细条件见核心源树 docs/bench-qemu.json |
 
-第一份本地 Android 结果早于 Shadowsocks TCP、SOCKS5 UDP、独立 cgroup 守卫打包等改动。API 35 另有独立实测，记录随审阅包分发。API 29、35 的 GitHub 工作流文件可随仓库提交触发。正式发布需要同一源码提交及同一安装包在对应环境获得结果。
+API 23 的首轮 Android 结果早于 Shadowsocks TCP、SOCKS5 UDP 和独立 cgroup 守卫打包。API 35 的 SELinux Enforcing 环境拒绝独立进程挂接 eBPF cgroup hook 10，返回 EPERM。模块的 xtables 路径单独验证。API 35 另有独立实测，记录随审阅包分发。API 29、35 的 GitHub 工作流文件可随仓库提交触发。正式发布需要同一源码提交及同一安装包在对应环境获得结果。
 
 ## 对照范围
 
 - M02、M04、M07、M08、M16、M22、M27、M28、M41、M42、M46、M52、M67、M68、M69、M70、M79、M80、M87。配置、进程或订阅的部分行为已有覆盖。涵盖重复应用、坏输入、文件回滚、节点凭据与命令状态；仍需逐项跑原验收的并发、中断及迁移组合。
 - M14、M73、M78、M81、M82、M84。真实 Chromium 验证静态页面和桥接夹具，覆盖多宽度与三语。仍需 Android 管理器的实际 WebView、读屏、软键盘、旧入口和整条导航测试。
-- M01、M05、M06、M15、M19、M20、M23、M60、M63、M74、M85、M86。已有显式代理、指定 UID 或热点接口的 DNS 端口测试。完整设备流量、透明接管、路由归属、真实热点下游及恢复流程仍需独立证明。
+- M01、M05、M06、M15、M19、M20、M23、M60、M63、M74、M85、M86。已有显式代理、指定 UID 或热点接口的透明 TCP 和 DNS 端口测试。完整设备流量、透明接管、路由归属、真实热点下游及恢复流程仍需独立证明。
 - M12、M17、M37、M39、M40、M48、M58、M59、M64、M65、M72。源码重建、固定输入、KAM 产物、差分、协议负例或基准已有证据。旧版完整交付契约、同功能吞吐与候选远端发布验证尚缺。
 - 表中“待验证”包括未实现以及缺少足够观测的项目。替换旧版前需要完整执行原行的可观察预期。M54 的旧工具链要求应按新版明确去除 kamfw 的要求改为相同行为验收。
 
