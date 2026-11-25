@@ -75,6 +75,7 @@ window.strings = (() => {
     "订阅为空或超过 2 MiB。": ["The subscription is empty or exceeds 2 MiB.", "Подписка пуста или превышает 2 МиБ."],
     "节点地址无效。请填写带端口的 IP 地址或域名，支持 Shadowsocks AEAD、SOCKS5、HTTP 和 HTTPS。": [
       "Enter a Shadowsocks AEAD, SOCKS5, HTTP or HTTPS address with a host and port.", "Укажите адрес Shadowsocks AEAD, SOCKS5, HTTP или HTTPS с адресом узла и портом."],
+    "请检查模块数据目录中 resolver 文件的地址和权限。": ["Check the address and permissions of the resolver file in the module data directory.", "Проверьте адрес и права файла resolver в каталоге данных модуля."],
     "请输入 1 到 65535 之间的节点序号。": ["Enter a node number from 1 to 65535.", "Введите номер узла от 1 до 65535."],
     "User-Agent 包含不支持的字符。": ["The User-Agent contains invalid characters.", "В User-Agent есть недопустимые символы."],
     "订阅地址格式无效。": ["Invalid subscription URL.", "Недопустимая ссылка подписки."],

@@ -19,6 +19,7 @@ const errors = {
   import_failed: "导入失败，请检查订阅格式及节点序号。",
   input_too_large_or_empty: "订阅为空或超过 2 MiB。",
   invalid_config: "节点地址无效。请填写带端口的 IP 地址或域名，支持 Shadowsocks AEAD、SOCKS5、HTTP 和 HTTPS。",
+  invalid_resolver: "请检查模块数据目录中 resolver 文件的地址和权限。",
   invalid_index: "请输入 1 到 65535 之间的节点序号。",
   invalid_ua: "User-Agent 包含不支持的字符。",
   invalid_url: "订阅地址格式无效。",

@@ -92,7 +92,7 @@ case $cmd in
     uninstall)
         if [ -e "$state/dns-scope" ] || [ -e "$state/dns-next" ]; then dns_manage clear || exit 1; fi
         if traffic_chosen; then traffic_manage clear || exit 1; fi
-        stop_daemon "$state/redirect.pid" && stop_core && rm -f "$state/redirect.log" "$config" "$state/enabled" "$state/core.log" "$state/identity.txt" "$state"/preview-feed.*
+        stop_daemon "$state/redirect.pid" && stop_core && rm -f "$state/redirect.log" "$config" "$state/enabled" "$state/core.log" "$state/identity.txt" "$state/resolver" "$state"/preview-feed.*
         exit;;
 esac
 [ -x "$core" ] || { error core_missing; exit 1; }

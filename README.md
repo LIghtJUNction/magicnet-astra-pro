@@ -18,6 +18,22 @@ cd /data/adb/modules/magicnet-astra-pro
 
 上游地址、订阅和 age 私钥均属于私有输入。首次配置保存在模块独立的数据目录中。首次远程导入通过核心的 HTTPS 客户端和经过认证的加密 DNS 下载，已连接时可经运行中的代理下载。远程订阅允许自定义 User-Agent，age 加密订阅需要可执行的 age 解密器和私有身份文件。各格式的可执行协议以 magicbox 的导入结果为准。
 
+### 自定义模块使用的加密 DNS
+
+如果当前网络无法连接默认解析器，可在 root shell 中为这次安装指定一个可达的 DNS-over-TLS 服务。请将示例中的保留地址和证书名替换为服务商公布并经你验证的值。
+
+~~~sh
+umask 077
+dir=/data/adb/magicnet-astra-pro
+mkdir -p "$dir" && chmod 700 "$dir"
+printf '%s\n' 'tls://192.0.2.53:853?server_name=resolver.example' > "$dir/resolver.new" &&
+    chmod 600 "$dir/resolver.new" && mv "$dir/resolver.new" "$dir/resolver"
+~~~
+
+`resolver` 只存一行，IPv6 地址用方括号包围。文件应由 root 拥有，权限为 600 或 400。使用自定义 `MAGICNET_STATE_DIR` 时文件位于该目录。CLI 优先采用调用进程显式传入的 `MAGICBOX_RESOLVER`，其次读取此文件。两者都未设置时使用核心默认值。修改文件后，重启模块代理使运行中的服务采用新值。删除文件并重启可恢复默认。
+
+WebUI、命令行和开机服务共用这个入口。它控制首次获取 HTTPS 订阅及域名节点启动时的 DNS 查询。已经运行的代理接收订阅请求时，由上游解析目的域名。选择的 DoT 服务可以看到交给它的名称。核心验证 TLS 证书，解析失败时终止操作。Android 系统与其他应用保留各自的 DNS 设置。
+
 ## 按应用或热点转发 TCP
 
 启动上游后，在管理页展开“应用与热点分流”，选中应用包名或填写热点的实际接口名。共享 UID 的包会显示在同一项中。应用通过蜂窝或 Wi-Fi 发起的新公网 TCP 连接，以及指定热点接口进入的新公网 TCP 连接，都会交给 magicbox。也可使用 shell 一次替换整个选择。

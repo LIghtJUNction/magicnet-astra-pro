@@ -1,3 +1,24 @@
+# Validate the private file as data. The core parses the IP and verifies TLS.
+resolver_from_file() (
+    file=$state/resolver
+    [ -f "$file" ] && [ ! -L "$file" ] || exit 1
+    owner=$(id -u) || exit 1
+    case $(stat -c '%u:%a' "$file") in "$owner:600"|"$owner:400") ;; *) exit 1;; esac
+    size=$(stat -c %s "$file") && [ "$size" -gt 0 ] && [ "$size" -le 512 ] || exit 1
+    line=
+    if IFS= read -r line < "$file"; then size=$((size - 1)); fi
+    [ "$size" -eq "${#line}" ] || exit 1
+    printf '%s\n' "$line" | grep -Eq '^tls://([0-9]+(\.[0-9]+){3}|\[[0-9A-Fa-f:.]+\]):[0-9]{1,5}\?server_name=[A-Za-z0-9.-]+$' || exit 1
+    printf '%s' "$line"
+)
+
+load_resolver() {
+    [ "${MAGICBOX_RESOLVER+x}" != x ] || return 0
+    [ -e "$state/resolver" ] || [ -L "$state/resolver" ] || return 0
+    MAGICBOX_RESOLVER=$(resolver_from_file) || { unset MAGICBOX_RESOLVER; error invalid_resolver; return 1; }
+    export MAGICBOX_RESOLVER
+}
+
 # PID identity includes kernel start time and executable. A stale file from a
 # previous boot or an unrelated process must never become a signal target.
 start_ticks() {
@@ -36,6 +57,7 @@ start_daemon() {
     owned_pid "$pidfile" >/dev/null && return 0
     [ -s "$config" ] || { error no_upstream; return 1; }
     "$core" check "$config" >/dev/null 2>&1 || { error invalid_config; return 1; }
+    load_resolver || return 1
     : > "$logfile" || return 1
     # Do not retain the control lock or inherit the manager's stdin and pipes.
     nohup "$core" "$@" 9>&- </dev/null >"$logfile" 2>&1 &
@@ -81,6 +103,7 @@ apply_candidate() {
     if [ -f "$config" ] && cmp -s "$work/new.toml" "$config"; then return 0; fi
     active=no
     if owned_pid >/dev/null; then
+        load_resolver || return 1
         active=yes
         cp "$config" "$work/previous.toml" || return 1
         stop_daemon "$state/redirect.pid" && stop_core || { error stop_failed; return 1; }

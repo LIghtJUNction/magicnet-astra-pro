@@ -1,7 +1,7 @@
 [prop]
 id = "magicnet-astra-pro"
 name = "MagicNet Astra Pro"
-version = "0.1.0-dev"
+version = "0.1.0-dev.1"
 versionCode = 1
 author = "LIghtJUNction"
 description = "Local SOCKS5 and HTTP CONNECT proxy for Android, powered by magicbox."

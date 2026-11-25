@@ -8,6 +8,7 @@ fetch_source() {
     case $ua in *[![:print:]]*|*\"*|*\\*) error invalid_ua; return 1;; esac
     [ "${#url}" -le 4096 ] && [ "${#ua}" -le 256 ] || { error input_too_large; return 1; }
     if [ ! -s "$config" ]; then
+        load_resolver || return 1
         printf '%s\n' "$url" | MAGICBOX_USER_AGENT="$ua" "$core" fetch - > "$work/input" 2>/dev/null ||
             { error fetch_failed; return 1; }
         return 0

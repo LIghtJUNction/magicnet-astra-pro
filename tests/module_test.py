@@ -23,6 +23,7 @@ class Module(unittest.TestCase):
         self.root = Path(work.name, "module")
         self.state = Path(work.name, "state")
         self.env = {**os.environ, "MAGICNET_STATE_DIR": str(self.state)}
+        self.env.pop("MAGICBOX_RESOLVER", None)
         shutil.copytree(MODULE, self.root)
         (self.root / "bin").mkdir(exist_ok=True)
         shutil.copyfile(BINARY, self.root / "bin/magicbox")
@@ -62,6 +63,87 @@ class Module(unittest.TestCase):
         self.cli("start", success=False)
         self.assertFalse((self.state / "enabled").exists())
         self.assertEqual(list(self.state.glob(".edit.*")), [])
+
+    @unittest.skipUnless(shutil.which("openssl"), "openssl required")
+    def test_resolver_file_drives_web_boot_and_explicit_override(self):
+        self.state.mkdir(mode=0o700)
+        resolver = self.state / "resolver"
+        pem, key = self.state / "ca.pem", self.state / "server.key"
+        subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+                        "-subj", "/CN=resolver.example", "-addext", "subjectAltName=DNS:resolver.example",
+                        "-addext", "basicConstraints=critical,CA:FALSE", "-keyout", key, "-out", pem],
+                       check=True, capture_output=True)
+        tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        tls.load_cert_chain(pem, key)
+        server_names = []
+        tls.set_servername_callback(lambda sock, name, ctx: server_names.append(name))
+        env = {**self.env, "MAGICBOX_CA_BUNDLE": str(pem)}
+
+        def run_through_dot(name, *args, command_env, explicit=False):
+            with socket.socket() as dns, concurrent.futures.ThreadPoolExecutor(1) as pool:
+                dns.bind(("127.0.0.1", 0))
+                dns.listen()
+                dns.settimeout(6)
+                uri = f"tls://127.0.0.1:{dns.getsockname()[1]}?server_name=resolver.example"
+                if explicit:
+                    command_env = {**command_env, "MAGICBOX_RESOLVER": uri}
+                else:
+                    resolver.write_text(uri + "\n")
+                    resolver.chmod(0o600)
+                called = pool.submit(self.cli, *args, env=command_env, success=False)
+                conn, _ = dns.accept()
+                with tls.wrap_socket(conn, server_side=True) as encrypted, encrypted.makefile("rb") as incoming:
+                    encrypted.settimeout(5)
+                    labels = b"".join(bytes([len(p)]) + p for p in name.encode().split(b".")) + b"\0"
+                    kinds = []
+                    for _ in range(2):
+                        query = incoming.read(int.from_bytes(incoming.read(2), "big"))
+                        self.assertEqual(query[12:-4], labels)
+                        kinds.append(int.from_bytes(query[-4:-2], "big"))
+                        # NXDOMAIN exercises authenticated DNS without ever dialing the Internet.
+                        answer = query[:2] + bytes.fromhex("81830001000000000000") + query[12:]
+                        encrypted.sendall(len(answer).to_bytes(2, "big") + answer)
+                    self.assertEqual(sorted(kinds), [1, 28])
+                return called.result(timeout=8)
+
+        web_input = base64.b64encode(b"https://feed.example/subscription\nAgent/1\n").decode()
+        preview = run_through_dot("feed.example", "web-preview-url", command_env={**env, "MAGICNET_INPUT_B64": web_input})
+        self.assertIn("fetch_failed", preview.stderr)  # authenticated, empty DNS replies
+        self.cli("configure", "socks5://proxy.example:8080")
+        (self.state / "enabled").touch()
+        self.assertIn("start_failed", run_through_dot("proxy.example", "boot", command_env=env).stderr)
+        resolver.write_text("bad\nsecond line\n")
+        self.assertIn("state=stopped", self.cli("status", env=env).stdout)
+        self.cli("stop", env=env)
+        self.assertIn("invalid_resolver", self.cli("start", env=env, success=False).stderr)
+        result = run_through_dot("proxy.example", "start", command_env=env, explicit=True)
+        self.assertIn("start_failed", result.stderr)
+        self.assertEqual(server_names, ["resolver.example"] * 3)
+        self.cli("stop", env=env)
+
+    def test_private_resolver_file_format(self):
+        self.cli("configure", "socks5://127.0.0.1:17014")
+        path = self.state / "resolver"
+        value = b"tls://[::1]:853?server_name=resolver.example"
+        for value_on_disk in [b"", value + b"\n\n", value + b"\0", b"tls://resolver.example:853?server_name=a",
+                              b"tls://127.0.0.1:53?server_name=$(false)", b"x" * 513]:
+            path.write_bytes(value_on_disk)
+            path.chmod(0o600)
+            self.assertIn("invalid_resolver", self.cli("start", success=False).stderr)
+        path.write_bytes(value)
+        path.chmod(0o644)
+        self.assertIn("invalid_resolver", self.cli("start", success=False).stderr)
+        path.chmod(0o400)
+        self.cli("start")
+        path.chmod(0o600)
+        path.write_text("malformed")
+        self.assertIn("state=running", self.cli("status").stdout)
+        self.cli("stop")
+        path.unlink()
+        path.symlink_to(self.state / "missing")
+        self.assertIn("invalid_resolver", self.cli("start", success=False).stderr)
+        self.cli("uninstall")
+        self.assertFalse(path.is_symlink())
 
     def test_shadowsocks_share_link_is_validated_and_redacted(self):
         blob = base64.urlsafe_b64encode(b"aes-128-gcm:test-secret").decode().rstrip("=")
