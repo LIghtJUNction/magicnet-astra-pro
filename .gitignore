@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+/build/
+/core/
+/dist/
+/src/magicnet-astra-pro/bin/
+/src/magicnet-astra-pro/rules/

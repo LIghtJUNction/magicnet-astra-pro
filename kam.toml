@@ -1,0 +1,19 @@
+[prop]
+id = "magicnet-astra-pro"
+name = "MagicNet Astra Pro"
+version = "0.1.0-dev"
+versionCode = 1
+author = "LIghtJUNction"
+description = "Local SOCKS5 and HTTP CONNECT proxy for Android, powered by magicbox."
+
+[kam]
+module_type = "kam"
+
+[kam.build]
+source_dir = "src/magicnet-astra-pro"
+target_dir = "dist"
+output_file = "{{id}}"
+
+[mmrl.repo]
+license = "MIT"
+repository = "https://github.com/LIghtJUNction/magicnet-astra-pro"

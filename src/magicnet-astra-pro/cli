@@ -1,0 +1,132 @@
+#!/system/bin/sh
+# Android shell and POSIX sh share this entry point.
+set -u
+# The managers ship BusyBox ash with standalone applet lookup. Android before
+# Android 8 can lack awk, base64 and flock in /system/bin.
+if [ "${MAGICNET_STANDALONE:-0}" != 1 ]; then
+    for bb in "${MAGICNET_BUSYBOX:-}" /data/adb/ksu/bin/busybox /data/adb/ap/bin/busybox /data/adb/magisk/busybox; do
+        if [ -n "$bb" ] && [ -x "$bb" ]; then
+            export MAGICNET_STANDALONE=1 ASH_STANDALONE=1
+            exec "$bb" sh "$0" "$@"
+        fi
+    done
+fi
+umask 077
+LC_ALL=C
+export LC_ALL
+root=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P) || exit 1
+if [ "${1:-}" = patch ]; then
+    shift
+    . "$root/lib/patch.sh"
+    apply_patch_zip "$@"
+    exit
+fi
+state=${MAGICNET_STATE_DIR:-/data/adb/magicnet-astra-pro}
+core="$root/bin/magicbox"
+config="$state/config.toml"
+listener=127.0.0.1:1080
+MAGICBOX_BLOCKLIST="$root/rules/block.txt"
+export MAGICBOX_BLOCKLIST
+error() { printf 'magicnet: %s\n' "$1" >&2; }
+usage() {
+    cat <<'USAGE'
+magicnet status | show | log
+magicnet configure socks5://IP:PORT   (or HTTP, HTTPS, or an ss:// share link)
+magicnet import FILE|- [NODE_NUMBER]
+magicnet fetch HTTPS_URL [USER_AGENT] [NODE_NUMBER]
+magicnet start | stop
+magicnet patch OLD.zip DELTA.zip NEW.zip EXPECTED_SHA256
+magicnet dns apps | status | clear | sync
+magicnet dns apply app:PACKAGE | uid:APP_UID [tether:INTERFACE ...]
+USAGE
+}
+. "$root/lib/service.sh"
+. "$root/lib/subscription.sh"
+. "$root/lib/dns.sh"
+
+# WebView sends base64 as an inert env value (the bridge interpolates env
+# assignments). Keep it out of the daemon and any children launched below.
+wire=${MAGICNET_INPUT_B64:-}
+unset MAGICNET_INPUT_B64
+cmd=${1:-help}
+[ "$#" -eq 0 ] || shift
+case $cmd in
+    help|-h|--help) usage; exit;;
+    status|show) status; exit;;
+    log) [ ! -r "$state/core.log" ] || tail -n 40 "$state/core.log"; exit;;
+    boot) [ -f "$state/enabled" ] || [ -e "$state/dns-scope" ] || [ -e "$state/dns-next" ] || exit 0;;
+    start|stop|dns|configure|import|fetch|web-configure|web-preview-file|web-preview-url|web-apply|uninstall) ;;
+    *) usage >&2; exit 2;;
+esac
+
+mkdir -p "$state" && chmod 700 "$state" || exit 1
+exec 9>"$state/control.lock" || exit 1
+command -v flock >/dev/null 2>&1 || { error busybox_required; exit 1; }
+flock -x 9 || { error lock_failed; exit 1; }
+case $cmd in
+    start) start_core && : >"$state/enabled"; exit;;
+    stop) stop_core && rm -f "$state/enabled"; exit;;
+esac
+work=$(mktemp -d "$state/.edit.XXXXXX") || exit 1
+trap 'rm -rf "$work"' EXIT
+trap 'exit 1' HUP INT TERM
+# Android toybox and manager BusyBox implement stat -c. An abandoned preview
+# expires after ten minutes, and is purged on the next locked interaction.
+now=$(date +%s)
+for preview in "$state"/preview-feed.*; do
+    [ -f "$preview" ] || continue
+    newer=$(stat -c %Y "$preview") || exit 1
+    if [ "$now" -lt "$newer" ] || [ $((now - newer)) -ge 600 ]; then rm -f "$preview"; fi
+done
+case $cmd in
+    dns) dns_manage "$@"; exit;;
+    boot) dns_manage sync && { [ ! -f "$state/enabled" ] || start_core; }; exit;;
+    uninstall)
+        if [ -e "$state/dns-scope" ] || [ -e "$state/dns-next" ]; then dns_manage clear || exit 1; fi
+        stop_core && rm -f "$config" "$state/enabled" "$state/core.log" "$state/identity.txt" "$state"/preview-feed.*
+        exit;;
+esac
+[ -x "$core" ] || { error core_missing; exit 1; }
+case $cmd in
+    web-configure|web-preview-file|web-preview-url)
+        [ -n "$wire" ] && [ "${#wire}" -le 43692 ] || { error web_limit; exit 2; }
+        printf '%s' "$wire" | base64 -d > "$work/web-input" || { error invalid_input; exit 2; }
+        unset wire
+        exec < "$work/web-input"
+        case $cmd in
+            web-configure) cmd=configure; set -- -;;
+        esac;;
+esac
+case $cmd in
+    configure)
+        [ "$#" -eq 1 ] || { usage >&2; exit 2; }
+        value=$1
+        if [ "$value" = - ]; then IFS= read -r value || [ -n "$value" ] || exit 2; fi
+        case $value in ss://?*)
+            # Import first so standard URI fragments and encoded credentials
+            # are retained/removed by the same parser as subscription entries.
+            case $value in *[![:graph:]]*) error invalid_config; exit 2;; esac
+            [ "${#value}" -le 8192 ] || { error input_too_large; exit 2; }
+            printf '%s\n' "$value" > "$work/input" && apply_input 1
+            exit;;
+        esac
+        case $value in socks5://?*|http://?*|https://?*) ;; *) error invalid_config; exit 2;; esac
+        case $value in *[![:graph:]]*|*\"*|*\\*|*\#*) error invalid_config; exit 2;; esac
+        [ "${#value}" -le 2048 ] || { error input_too_large; exit 2; }
+        cat "$root/default.toml" > "$work/new.toml" &&
+            printf 'upstream = "%s"\n' "$value" >> "$work/new.toml" && apply_candidate;;
+    import)
+        [ "$#" -ge 1 ] && [ "$#" -le 2 ] || { usage >&2; exit 2; }
+        load_source "$1" && apply_input "${2:-1}";;
+    fetch)
+        [ "$#" -ge 1 ] && [ "$#" -le 3 ] || { usage >&2; exit 2; }
+        fetch_source "$1" "${2:-MagicNet/0.1}" && apply_input "${3:-1}";;
+    web-preview-file) load_source - && preview_input;;
+    web-preview-url)
+        IFS= read -r url && IFS= read -r ua || exit 2
+        fetch_source "$url" "${ua:-MagicNet/0.1}" && preview_input;;
+    web-apply)
+        [ "$#" -eq 2 ] || exit 2
+        apply_preview "$1" "$2";;
+
+esac

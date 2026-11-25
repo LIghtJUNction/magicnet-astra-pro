@@ -1,0 +1,73 @@
+name: Verify MagicNet candidate
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - id: lock
+        run: |
+          revision=$(cat core.lock)
+          [[ "$revision" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$revision" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: LIghtJUNction/magicbox-core
+          ref: ${{ steps.lock.outputs.sha }}
+          path: core
+      - run: rustup toolchain install 1.100.0 --profile minimal --target aarch64-linux-android,x86_64-linux-android && rustup override set 1.100.0
+      - name: Build Linux and Android binaries
+        working-directory: core
+        run: |
+          cargo build --locked --release
+          for t in x86_64-linux-android aarch64-linux-android; do
+            ndk="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+            key=$(echo "$t" | tr '[:lower:]-' '[:upper:]_')
+            env "CC_$t=$ndk/${t}23-clang" "AR_$t=$ndk/llvm-ar" "CARGO_TARGET_${key}_LINKER=$ndk/${t}23-clang" cargo build --locked --release --target "$t"
+          done
+      - run: |
+          sudo apt-get update -qq && sudo apt-get install -y age
+          python3 -m unittest discover -s rules -v
+          python3 rules/build.py --out build/rules --all
+          python3 tests/delta_test.py
+          python3 tests/module_test.py core/target/release/magicbox
+          cc -O2 -Wall -Wextra -Werror tests/firewall-probe.c -o /tmp/mna-firewall-probe
+          sudo unshare -n sh -c 'ip link set lo up; export MAGICNET_FIREWALL_FIXTURE=1; sh tests/firewall-netns.sh "$PWD/src/magicnet-astra-pro" /tmp/mna-firewall-probe'
+          sudo unshare -nm --propagation private sh -ec 'mount -t proc proc /proc; ip link set lo up; export MAGICNET_FIREWALL_FIXTURE=1; sh tests/firewall-tether.sh "$PWD/src/magicnet-astra-pro" /tmp/mna-firewall-probe'
+          python3 -m venv "$RUNNER_TEMP/web-test"
+          "$RUNNER_TEMP/web-test/bin/pip" install playwright
+          "$RUNNER_TEMP/web-test/bin/python" tests/webui_test.py --chrome "$(command -v google-chrome)"
+          python3 scripts/test-tools.py
+      - name: Enable KVM
+        run: sudo chmod 666 /dev/kvm
+      - uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          script: sh scripts/ci-android.sh package
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: verified-kam-modules
+          path: dist/*.zip
+          if-no-files-found: error
+  replay:
+    needs: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: verified-kam-modules
+          path: dist
+      - run: python3 scripts/test-tools.py && sudo chmod 666 /dev/kvm
+      - uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 29
+          target: default
+          arch: x86_64
+          script: sh scripts/ci-android.sh replay
