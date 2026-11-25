@@ -41,6 +41,10 @@ window.magicnet = (() => {
   return Object.freeze({
     available: () => typeof window.ksu?.exec === "function",
     status: () => call(cli + " status"),
+    routeStatus: () => call(cli + " traffic status"),
+    routeApps: () => call(cli + " traffic apps"),
+    routeClear: () => call(cli + " traffic clear"),
+    routeApply: items => call(cli + " web-traffic", text(items.join("\n") + "\n")),
     start: () => call(cli + " start"),
     stop: () => call(cli + " stop"),
     configure: value => call(cli + " web-configure", text(value)),

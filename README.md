@@ -18,6 +18,24 @@ cd /data/adb/modules/magicnet-astra-pro
 
 上游地址、订阅和 age 私钥均属于私有输入。首次配置保存在模块独立的数据目录中。首次远程导入通过核心的 HTTPS 客户端和经过认证的加密 DNS 下载，已连接时可经运行中的代理下载。远程订阅允许自定义 User-Agent，age 加密订阅需要可执行的 age 解密器和私有身份文件。各格式的可执行协议以 magicbox 的导入结果为准。
 
+## 按应用或热点转发 TCP
+
+启动上游后，在管理页展开“应用与热点分流”，选中应用包名或填写热点的实际接口名。共享 UID 的包会显示在同一项中。应用通过蜂窝或 Wi-Fi 发起的新公网 TCP 连接，以及指定热点接口进入的新公网 TCP 连接，都会交给 magicbox。也可使用 shell 一次替换整个选择。
+
+~~~sh
+./cli start
+./cli traffic apps
+./cli traffic apply app:com.example.reader tether:wlan1
+./cli traffic status
+./cli traffic clear
+~~~
+
+内核通过连接跟踪保存连接原本要去的 IP 和端口，magicbox 按此地址与上游建立连接。显式代理可以转交域名。透明 TCP 只收到目标 IP，需按域名过滤的应用应使用本机 SOCKS5 的远端解析。IPv4 与 IPv6 都有 NAT 时，状态显示 `dual-stack-redirect`。只有 IPv4 NAT 的内核显示 `ipv4-redirect-ipv6-block`。此时 IPv4 经代理，选中范围的 IPv6 公网 TCP 由过滤表丢弃。IPv6 过滤表也不可用时启用操作失败。
+
+分流自动阻止选中 UID 和热点客户的 TCP/UDP 53、853。系统解析器代应用发起的查询归系统 UID，需独立验证。常规 UDP、QUIC、已有连接和未选应用沿用原有路径。代理进程使用 root UID。规则保留本地、私有、常见覆盖网地址及已有 NAT 规则的优先级。显式 IP 上游可在防火墙中直接绕过；域名上游由核心安全解析并检查启动时固定的对端地址。应用流量在常见 VPN 隧道接口上继续使用原有路由。热点入口在路由选择前处理，任意自定义 VPN 公网分流策略仍需单独验收。
+
+`stop` 暂停转发并保留选择，下一次启动恢复。 `traffic clear` 清除分流以及与之配套的 DNS 规则。独立配置的 `dns apply` 规则继续生效。
+
 ## 应用和热点的 DNS 保护
 
 `cli dns apps` 查询应用与 UID。可以限制选定应用 UID 或指定热点接口的 IPv4、IPv6 DNS 流量。此功能依赖设备内核和 xtables。配置按精确范围生效。Android 的系统解析服务、应用自带的 DoH 和隧道流量需要单独验证。

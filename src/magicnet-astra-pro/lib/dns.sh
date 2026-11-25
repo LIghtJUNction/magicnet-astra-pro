@@ -68,35 +68,45 @@ dns_tools() {
     export PATH
 }
 
-dns_commit() {
+# Apply one table per family. A durable intent allows a boot retry after
+# interruption. A temporary withdrawal leaves the chosen scope in place.
+firewall_commit() {
+    policy=$1 table=$2 persist=${3:-yes}
     dns_tools || return 1
-    for family in iptables ip6tables; do
+    families='iptables ip6tables'
+    if [ "$policy" = traffic ] && [ "${traffic_mode:-}" = ipv4-redirect-ipv6-block ]; then families=iptables; fi
+    for family in $families; do
         command -v "$family-restore" >/dev/null &&
-            dns_xt /dev/null "$family" -t filter -S > "$work/$family.snapshot" ||
+            dns_xt /dev/null "$family" -t "$table" -S > "$work/$family.snapshot" ||
             { error firewall_unavailable; return 1; }
         for undo in 0 1; do
-            awk -v undo="$undo" -f "$root/lib/dns-restore.awk" "$work/scope" "$work/$family.snapshot" \
+            awk -v undo="$undo" -v policy="$policy" -v family="$family" -v upstream="${bypass_ip:-}" \
+                -f "$root/lib/firewall-restore.awk" -f "$root/lib/traffic-rules.awk" "$work/scope" "$work/$family.snapshot" \
                 > "$work/$family.$undo" || { error firewall_ownership_conflict; return 1; }
         done
     done
     # A crash between commits leaves enough intent for 'dns sync' or boot.
-    cp "$work/scope" "$state/dns-next.new" && mv "$state/dns-next.new" "$state/dns-next" || return 1
+    if [ "$persist" = yes ]; then
+        cp "$work/scope" "$state/$policy-next.new" && mv "$state/$policy-next.new" "$state/$policy-next" || return 1
+    fi
     if ! dns_xt "$work/iptables.0" iptables-restore -n; then
-        rm -f "$state/dns-next"
+        [ "$persist" = no ] || rm -f "$state/$policy-next"
         error ipv4_rules_rejected
         return 1
     fi
-    if ! dns_xt "$work/ip6tables.0" ip6tables-restore -n; then
+    if [ "$families" != iptables ] && ! dns_xt "$work/ip6tables.0" ip6tables-restore -n; then
         if dns_xt "$work/iptables.1" iptables-restore -n; then
-            rm -f "$state/dns-next"
+            [ "$persist" = no ] || rm -f "$state/$policy-next"
             error ipv6_rules_rejected
         else
+            : > "$work/recovery"
             error firewall_recovery_required
         fi
         return 1
     fi
-    mv "$state/dns-next" "$state/dns-scope" || return 1
-    [ -s "$state/dns-scope" ] || rm -f "$state/dns-scope"
+    [ "$persist" = yes ] || return 0
+    mv "$state/$policy-next" "$state/$policy-scope" || return 1
+    [ -s "$state/$policy-scope" ] || rm -f "$state/$policy-scope"
 }
 
 dns_manage() {
@@ -111,14 +121,14 @@ dns_manage() {
             if [ -s "$state/dns-scope" ]; then cat "$state/dns-scope"; else echo 'scope=empty'; fi;;
         apply)
             shift
-            dns_write_scope "$@" > "$work/raw" && sort -u "$work/raw" > "$work/scope" && dns_commit;;
+            dns_write_scope "$@" > "$work/raw" && sort -u "$work/raw" > "$work/scope" && firewall_commit dns filter;;
         clear)
-            : > "$work/scope" && dns_commit;;
+            : > "$work/scope" && firewall_commit dns filter;;
         sync)
             if [ -f "$state/dns-next" ]; then cp "$state/dns-next" "$work/scope" || return 1
             elif [ -s "$state/dns-scope" ]; then cp "$state/dns-scope" "$work/scope" || return 1
             else return 0; fi
-            dns_commit;;
+            firewall_commit dns filter;;
         *) error invalid_scope; return 2;;
     esac
 }

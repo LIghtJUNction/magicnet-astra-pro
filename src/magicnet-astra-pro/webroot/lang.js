@@ -2,6 +2,18 @@
 
 window.strings = (() => {
   const words = {
+    "应用与热点分流": ["App and hotspot routing", "Маршрутизация приложений и точки доступа"],
+    "选中范围的公网 TCP 连接经过代理。直接访问 DNS 的 53 和 853 端口会被阻止。": ["Public TCP connections in the selection use the proxy. Direct DNS on ports 53 and 853 is blocked.", "Публичные TCP-соединения выбранных клиентов идут через прокси. Прямой DNS на портах 53 и 853 блокируется."],
+    "应用包名与 UID（可多选）": ["App packages and UIDs (multiple selection)", "Приложения и UID (можно выбрать несколько)"],
+    "热点接口（多个用空格隔开）": ["Hotspot interfaces (space-separated)", "Интерфейсы точки доступа через пробел"],
+    "应用分流": ["Apply routing", "Применить"],
+    "清除分流": ["Clear routing", "Сбросить"],
+    "IPv4 已分流，IPv6 公网 TCP 已阻止": ["IPv4 routed, public IPv6 TCP blocked", "IPv4 через прокси, публичный TCP по IPv6 заблокирован"],
+    "分流已启用": ["Routing active", "Маршрутизация включена"],
+    "分流已暂停": ["Routing paused", "Маршрутизация приостановлена"],
+    "分流已关闭": ["Routing off", "Маршрутизация выключена"],
+    "请填写热点的实际接口名称。": ["Enter a hotspot interface name.", "Укажите имя интерфейса точки доступа."],
+    "请选择至少一个应用或热点接口。": ["Choose at least one app or interface.", "Выберите приложение или интерфейс."],
     "刷新": ["Refresh", "Обновить"],
     "本机代理": ["Local proxy", "Локальный прокси"],
     "读取中": ["Loading", "Загрузка"],
@@ -19,9 +31,9 @@ window.strings = (() => {
     "停止代理": ["Stop proxy", "Остановить"],
     "上游节点": ["Upstream proxy", "Прокси-сервер"],
     "Shadowsocks、SOCKS5、HTTP 或 HTTPS 地址": ["Shadowsocks, SOCKS5, HTTP or HTTPS address", "Адрес Shadowsocks, SOCKS5, HTTP или HTTPS"],
-    "请使用 IP 地址。HTTPS 上游可添加 ?server_name=证书域名。应用交给代理的域名由上游解析。": [
-      "Use an IP address. For HTTPS, add ?server_name= with the certificate hostname if needed. The upstream resolves names supplied by your apps.",
-      "Укажите IP-адрес. Для HTTPS при необходимости добавьте ?server_name= с именем из сертификата. Имена, переданные приложением, разрешает прокси."],
+    "域名上游使用加密 DNS。HTTPS 上游可添加 ?server_name=证书域名。应用交给代理的域名由上游解析。": [
+      "Named upstreams use encrypted DNS. For HTTPS, add ?server_name= with the certificate hostname if needed. The upstream resolves names supplied by your apps.",
+      "Имена прокси разрешаются через шифрованный DNS. Для HTTPS при необходимости добавьте ?server_name= с именем из сертификата. Имена, переданные приложением, разрешает прокси."],
     "保存并启动": ["Save and start", "Сохранить и запустить"],
     "保存并应用": ["Apply changes", "Применить"],
     "从订阅导入": ["Import subscription", "Импорт подписки"],
@@ -61,8 +73,8 @@ window.strings = (() => {
     "订阅地址必须以 https:// 开头。": ["Enter an HTTPS subscription URL.", "Укажите ссылку HTTPS."],
     "导入失败，请检查订阅格式及节点序号。": ["Import failed. Check the feed format and node number.", "Ошибка импорта. Проверьте формат и номер узла."],
     "订阅为空或超过 2 MiB。": ["The subscription is empty or exceeds 2 MiB.", "Подписка пуста или превышает 2 МиБ."],
-    "节点地址无效。请填写带端口的 IP 地址，支持 Shadowsocks AEAD、SOCKS5、HTTP 和 HTTPS。": [
-      "Enter a Shadowsocks AEAD, SOCKS5, HTTP or HTTPS address with an IP and port.", "Укажите адрес Shadowsocks AEAD, SOCKS5, HTTP или HTTPS с IP и портом."],
+    "节点地址无效。请填写带端口的 IP 地址或域名，支持 Shadowsocks AEAD、SOCKS5、HTTP 和 HTTPS。": [
+      "Enter a Shadowsocks AEAD, SOCKS5, HTTP or HTTPS address with a host and port.", "Укажите адрес Shadowsocks AEAD, SOCKS5, HTTP или HTTPS с адресом узла и портом."],
     "请输入 1 到 65535 之间的节点序号。": ["Enter a node number from 1 to 65535.", "Введите номер узла от 1 до 65535."],
     "User-Agent 包含不支持的字符。": ["The User-Agent contains invalid characters.", "В User-Agent есть недопустимые символы."],
     "订阅地址格式无效。": ["Invalid subscription URL.", "Недопустимая ссылка подписки."],

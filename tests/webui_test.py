@@ -19,7 +19,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 BRIDGE = """
 window.calls = [];
-let upstream = "", state = "stopped";
+let upstream = "", state = "stopped", scope = [];
 window.ksu = {exec(command, opts, callback) {
   const payload = JSON.parse(opts).env?.MAGICNET_INPUT_B64 || "";
   window.calls.push({command, payload});
@@ -32,6 +32,11 @@ window.ksu = {exec(command, opts, callback) {
     else upstream = "socks5://192.0.2.1:8000";
   } else if (action === "start") { state = "running"; }
   else if (action === "stop") { state = "stopped"; }
+  else if (action === "traffic apps") { output = "10042 org.reader\\n10042 org.reader.sync\\n10123 org.player"; }
+  else if (action === "traffic status") {
+    output = "redirect=" + (scope.length && state === "running" ? "running" : "stopped") + "\\n" + scope.map(line => line.replace(":", " ")).join("\\n");
+  } else if (action === "web-traffic") { scope = atob(payload).trim().split("\\n"); }
+  else if (action === "traffic clear") { scope = []; }
   else if (action.startsWith("web-preview-")) {
     output = "preview=0123456789abcdef01234567\\n1\\tvless\\tunavailable\\tParis\\n2\\tsocks5\\tready\\tTaipei <b>Office</b>";
   } else if (action !== "web-apply 0123456789abcdef01234567 2") { code = 127; }
@@ -61,16 +66,34 @@ def exercise(url, chrome, screenshot):
         page.get_by_text("运行中", exact=True).wait_for()
         assert not page.locator("#endpoint").input_value()
         assert "password" not in page.locator("body").inner_text()
-        assert page.locator("#upstream").inner_text() == "socks5://192.0.2.1:8000"
+        assert page.locator("#upstream").text_content() == "socks5://192.0.2.1:8000", page.locator("#upstream").text_content()
         if screenshot:
             page.screenshot(path=screenshot, full_page=True)
+        page.locator("#routing summary").click()
+        page.get_by_text("分流已关闭", exact=True).wait_for()
+        assert page.locator("#route-apps option").count() == 2
+        assert "org.reader.sync" in page.locator('#route-apps option[value="10042"]').inner_text()
+        page.locator("#route-apps").select_option("10042")
+        page.locator("#route-tethers").fill("wlan1;test")
+        page.locator("#route-apply").click()
+        page.get_by_text("请填写热点的实际接口名称。").wait_for()
+        page.locator("#route-tethers").fill("wlan1")
+        page.locator("#route-apply").click()
+        page.get_by_text("分流已启用", exact=True).wait_for()
+        scope_calls = page.evaluate("window.calls.filter(entry => entry.command.endsWith(' web-traffic'))")
+        assert len(scope_calls) == 1
+        assert base64.b64decode(scope_calls[0]["payload"]) == b"uid:10042\ntether:wlan1\n"
+        page.locator("#route-clear").click()
+        page.get_by_text("分流已关闭", exact=True).wait_for()
+        assert page.locator("#route-clear").is_disabled()
+        page.locator("#routing summary").click()
         page.locator("#endpoint").fill("invalid'$()")
         page.locator("#save").click()
         page.locator("#message").get_by_text("节点地址无效", exact=False).wait_for()
         page.locator("#toggle").click()
         page.get_by_text("已停止", exact=True).wait_for()
 
-        page.locator("summary").click()
+        page.locator("#subscriptions summary").click()
         raw = b"socks5://198.51.100.1:8001\nsocks5://192.0.2.1:8000\n"
         page.locator("#file").set_input_files({"name":"nodes.txt", "mimeType":"text/plain", "buffer":raw})
         page.locator("#preview").click()

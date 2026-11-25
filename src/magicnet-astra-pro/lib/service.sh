@@ -5,7 +5,8 @@ start_ticks() {
 }
 
 owned_pid() {
-    [ -r "$state/pid" ] && read -r pid ticks < "$state/pid" || return 1
+    pidfile="${1:-$state/pid}"
+    [ -r "$pidfile" ] && read -r pid ticks < "$pidfile" || return 1
     case $pid in ''|*[!0-9]*|0|1) return 1;; esac
     [ -n "$ticks" ] && [ "$(start_ticks "$pid")" = "$ticks" ] || return 1
     exe=$(readlink "/proc/$pid/exe" 2>/dev/null) || return 1
@@ -14,42 +15,49 @@ owned_pid() {
     return 0
 }
 
-stop_core() {
-    old_pid=$(owned_pid) || { rm -f "$state/pid"; return 0; }
-    kill "$old_pid" 2>/dev/null || ! owned_pid >/dev/null || return 1
+stop_daemon() {
+    pidfile=$1
+    old_pid=$(owned_pid "$pidfile") || { rm -f "$pidfile"; return 0; }
+    kill "$old_pid" 2>/dev/null || ! owned_pid "$pidfile" >/dev/null || return 1
     tries=0
-    while owned_pid >/dev/null; do
+    while owned_pid "$pidfile" >/dev/null; do
         [ "$tries" -lt 40 ] || return 1
         sleep 0.05
         tries=$((tries + 1))
     done
-    rm -f "$state/pid"
+    rm -f "$pidfile"
 }
 
-start_core() {
-    owned_pid >/dev/null && return 0
+stop_core() { stop_daemon "$state/pid"; }
+
+start_daemon() {
+    pidfile=$1 logfile=$2 ready=$3
+    shift 3
+    owned_pid "$pidfile" >/dev/null && return 0
     [ -s "$config" ] || { error no_upstream; return 1; }
     "$core" check "$config" >/dev/null 2>&1 || { error invalid_config; return 1; }
-    : > "$state/core.log" || return 1
+    : > "$logfile" || return 1
     # Do not retain the control lock or inherit the manager's stdin and pipes.
-    nohup "$core" run "$config" 9>&- </dev/null >"$state/core.log" 2>&1 &
+    nohup "$core" "$@" 9>&- </dev/null >"$logfile" 2>&1 &
     child=$!
     ticks=$(start_ticks "$child")
     [ -n "$ticks" ] || { error start_failed; return 1; }
-    printf '%s %s\n' "$child" "$ticks" > "$state/pid.new" && mv "$state/pid.new" "$state/pid" || {
+    printf '%s %s\n' "$child" "$ticks" > "$pidfile.new" && mv "$pidfile.new" "$pidfile" || {
         kill "$child" 2>/dev/null
         return 1
     }
     tries=0
-    while kill -0 "$child" 2>/dev/null && [ "$tries" -lt 80 ]; do
-        if grep -Fxq "ready $listener" "$state/core.log" && owned_pid >/dev/null; then return 0; fi
+    while kill -0 "$child" 2>/dev/null && [ "$tries" -lt 160 ]; do
+        if grep -Fxq "ready $ready" "$logfile" && owned_pid "$pidfile" >/dev/null; then return 0; fi
         tries=$((tries + 1))
         sleep 0.05
     done
-    stop_core || return 1
+    stop_daemon "$pidfile" || return 1
     error start_failed
     return 1
 }
+
+start_core() { start_daemon "$state/pid" "$state/core.log" "$listener" run "$config"; }
 
 status() {
     if owned_pid >/dev/null; then echo 'state=running'; else echo 'state=stopped'; fi
@@ -75,14 +83,15 @@ apply_candidate() {
     if owned_pid >/dev/null; then
         active=yes
         cp "$config" "$work/previous.toml" || return 1
-        stop_core || { error stop_failed; return 1; }
+        stop_daemon "$state/redirect.pid" && stop_core || { error stop_failed; return 1; }
     fi
     mv "$work/new.toml" "$config" || {
-        [ "$active" = no ] || start_core
+        [ "$active" = no ] || start_services
         return 1
     }
-    if [ "$active" = yes ] && ! start_core; then
-        mv "$work/previous.toml" "$config" && start_core || { error rollback_failed; return 1; }
+    if [ "$active" = yes ] && ! start_services; then
+        stop_daemon "$state/redirect.pid" && stop_core || { error rollback_failed; return 1; }
+        mv "$work/previous.toml" "$config" && start_services || { error rollback_failed; return 1; }
         error previous_config_restored
         return 1
     fi

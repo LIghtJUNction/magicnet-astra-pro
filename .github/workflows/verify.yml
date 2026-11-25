@@ -37,6 +37,7 @@ jobs:
           cc -O2 -Wall -Wextra -Werror tests/firewall-probe.c -o /tmp/mna-firewall-probe
           sudo unshare -n sh -c 'ip link set lo up; export MAGICNET_FIREWALL_FIXTURE=1; sh tests/firewall-netns.sh "$PWD/src/magicnet-astra-pro" /tmp/mna-firewall-probe'
           sudo unshare -nm --propagation private sh -ec 'mount -t proc proc /proc; ip link set lo up; export MAGICNET_FIREWALL_FIXTURE=1; sh tests/firewall-tether.sh "$PWD/src/magicnet-astra-pro" /tmp/mna-firewall-probe'
+          sudo python3 tests/traffic-netns.py src/magicnet-astra-pro core/target/release/magicbox
           python3 -m venv "$RUNNER_TEMP/web-test"
           "$RUNNER_TEMP/web-test/bin/pip" install playwright
           "$RUNNER_TEMP/web-test/bin/python" tests/webui_test.py --chrome "$(command -v google-chrome)"

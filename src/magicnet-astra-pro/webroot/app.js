@@ -4,6 +4,8 @@ const {t} = window.strings;
 const api = window.magicnet;
 const $ = id => document.getElementById(id);
 const errors = {
+  invalid_interface: "请填写热点的实际接口名称。",
+  invalid_scope: "请选择至少一个应用或热点接口。",
   age_identity_required: "请先为模块配置 age 身份文件。",
   busybox_required: "请检查模块管理器提供的 BusyBox 是否可用。",
   age_required: "当前环境需要可执行的 age 工具来解密文件。",
@@ -16,7 +18,7 @@ const errors = {
   https_required: "订阅地址必须以 https:// 开头。",
   import_failed: "导入失败，请检查订阅格式及节点序号。",
   input_too_large_or_empty: "订阅为空或超过 2 MiB。",
-  invalid_config: "节点地址无效。请填写带端口的 IP 地址，支持 Shadowsocks AEAD、SOCKS5、HTTP 和 HTTPS。",
+  invalid_config: "节点地址无效。请填写带端口的 IP 地址或域名，支持 Shadowsocks AEAD、SOCKS5、HTTP 和 HTTPS。",
   invalid_index: "请输入 1 到 65535 之间的节点序号。",
   invalid_ua: "User-Agent 包含不支持的字符。",
   invalid_url: "订阅地址格式无效。",
@@ -51,6 +53,7 @@ function render() {
   $("import").disabled = busy || !connected || !$("node").value;
   $("refresh").disabled = busy || !api.available();
   $("message").textContent = t(notice);
+  document.dispatchEvent(new Event("magicnet-state"));
 }
 
 async function readState() {
@@ -60,6 +63,11 @@ async function readState() {
     if (split >= 0) fields[line.slice(0, split)] = line.slice(split + 1);
   }
   if (!["running", "stopped"].includes(fields.state)) throw new Error("operation_failed");
+  if ($("routing").open) {
+    const info = await api.routeStatus().catch(() => "");
+    fields.redirect = info.includes("redirect=running");
+    fields.blockIPv6 = info.includes("mode=ipv4-redirect-ipv6-block");
+  }
   snapshot = fields;
 }
 

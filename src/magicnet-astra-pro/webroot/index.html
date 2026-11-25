@@ -11,6 +11,7 @@
   <script defer src="lang.js"></script>
   <script defer src="app.js"></script>
   <script defer src="nodes.js"></script>
+  <script defer src="traffic.js"></script>
 </head>
 <body>
 <main>
@@ -30,7 +31,7 @@
     <form id="endpoint-form">
       <label data-i18n for="endpoint">Shadowsocks、SOCKS5、HTTP 或 HTTPS 地址</label>
       <input id="endpoint" type="password" required maxlength="8192" placeholder="socks5://192.0.2.1:1080" autocomplete="off" autocapitalize="none" spellcheck="false">
-      <p data-i18n class="hint">请使用 IP 地址。HTTPS 上游可添加 ?server_name=证书域名。应用交给代理的域名由上游解析。</p>
+      <p data-i18n class="hint">域名上游使用加密 DNS。HTTPS 上游可添加 ?server_name=证书域名。应用交给代理的域名由上游解析。</p>
       <button data-i18n type="submit" id="save" disabled>保存并启动</button>
     </form>
   </section>
@@ -59,6 +60,19 @@
         <select id="node"></select>
         <button data-i18n type="submit" id="import" disabled>应用订阅节点</button>
       </div>
+    </form>
+  </details>
+  <details id="routing">
+    <summary data-i18n>应用与热点分流</summary>
+    <form id="route-form">
+      <p data-i18n class="hint">选中范围的公网 TCP 连接经过代理。直接访问 DNS 的 53 和 853 端口会被阻止。</p>
+      <label data-i18n for="route-apps">应用包名与 UID（可多选）</label>
+      <select id="route-apps" multiple size="4"></select>
+      <label data-i18n for="route-tethers">热点接口（多个用空格隔开）</label>
+      <input id="route-tethers" placeholder="wlan1" autocomplete="off" autocapitalize="none" spellcheck="false">
+      <p class="hint" id="route-status" role="status"></p>
+      <button data-i18n type="submit" id="route-apply" disabled>应用分流</button>
+      <button data-i18n type="button" id="route-clear" class="quiet" disabled>清除分流</button>
     </form>
   </details>
   <p role="status" aria-live="polite" id="message"></p>
