@@ -13,11 +13,12 @@
 | Linux cgroup v2 | 独立内核 eBPF 守卫，144 个套接字结果，正常与异常退出、自有链接清理 | 单独 cgroup 及其后代。53 和 853 的控制范围不包含应用自定义 DoH |
 | Android 6 API 23 x86_64 | 在实际 Android 来宾运行 KAM、BusyBox、模块和较早的核心；真实 TLS 1.3 上游，SOCKS5/HTTP CONNECT 各 256 KiB 回显；规则命中、重复应用、坏配置和五轮启停。另测 Android 防火墙 | KAM 包 SHA-256 为 `0a2d09c139f915151c72172118205b995cce70971cb4fca5e749a9aea2d53ad8`。只将这些证据归于当时构建。Android 用户空间服务精简运行，未加载真实手机管理器 |
 | Android 15 API 35 x86_64 | KAM 0.6.16 在来宾内打包。SOCKS5 和 HTTP CONNECT 各完成 256 KiB 双向转发，TLS 1.3；实际规则命中、坏配置保留、重复应用和五轮启停通过。另用两个 Android UDP 进程验证域名数据报回显与控制连接关闭，Android 双栈 DNS 防火墙测试通过 | AOSP userdebug，软件 CPU，zygote 停止。UID 采用真实内核身份，探针通过本机隔离接口发包。实际管理器和蜂窝上网仍待验证。ARM64 包已在来宾打包，尚未在 ARM64 来宾执行 |
+| Android 10 API 29 x86_64 | 与 API 35 使用同一 ZIP。TLS 1.3 双向转发、规则命中、配置回滚与五轮启停、双栈 DNS、SOCKS5 UDP 均通过。通过无端口的隔离虚拟网桥验证应用 UID、透明目标、TCP 半关闭、旁路与清理 | AOSP userdebug，软件 CPU，zygote 停止。该内核没有 dummy 网卡，采用空网桥作为隔离出口；内核报告的流量模式为 IPv4 转发加选定 IPv6 公网 TCP 阻断 |
 | Chromium | 320、390、768、1280 像素宽，三种语言，真实 DOM，模拟 KernelSU 调用接口 | Android 实机管理器、TalkBack 与软键盘仍需独立测试 |
 | Unix / Android 交付 | shell CLI，原生 Web 文件，单 ABI KAM 打包与文件核对。ZIP 差分重建需可信目标 SHA-256 | 自动在线升级、旧版状态迁移和新项目 GitHub Actions 均有独立验收条件 |
 | 性能 | 两个二进制各七个进程，记录 RSS、吞吐和往返分位数 | 当前 Linux 构建、单 TCP 回环负载、无外部规则，详细条件见核心源树 docs/bench-qemu.json |
 
-API 23 的首轮 Android 结果早于 Shadowsocks TCP、SOCKS5 UDP 和独立 cgroup 守卫打包。API 35 的 SELinux Enforcing 环境拒绝独立进程挂接 eBPF cgroup hook 10，返回 EPERM。模块的 xtables 路径单独验证。API 35 最终 x86_64 包 SHA-256 为 `c5a83322601c20bcbed21e210a211d972a8107c2664e826a76c6f4f8cf7472a4`，完整重放和真实差分重建均通过。安装后，冷启动的服务钩子先恢复选定范围的 DNS 过滤，再启动上游。钩子执行之前的流量单独计入启动覆盖边界。API 29、35 的 GitHub 工作流文件可随仓库提交触发。正式发布需要同一源码提交及同一安装包在对应环境获得结果。
+API 23 的首轮 Android 结果早于 Shadowsocks TCP、SOCKS5 UDP 和独立 cgroup 守卫打包。API 35 的 SELinux Enforcing 环境拒绝独立进程挂接 eBPF cgroup hook 10，返回 EPERM。模块的 xtables 路径单独验证。API 35 最终 x86_64 包 SHA-256 为 `c5a83322601c20bcbed21e210a211d972a8107c2664e826a76c6f4f8cf7472a4`，完整重放和真实差分重建均通过。安装后，冷启动的服务钩子先恢复选定范围的 DNS 过滤，再启动上游。钩子执行之前的流量单独计入启动覆盖边界。API 29 与 35 的本地测试记录随包提供。两个新项目的 GitHub Actions 仍需目标仓库可写后在远端实际执行。正式发布需要同一源码提交及同一安装包在对应环境获得结果。
 
 ## 对照范围
 
