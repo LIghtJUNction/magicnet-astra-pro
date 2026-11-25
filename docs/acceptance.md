@@ -13,7 +13,7 @@
 | Android 6 API 23 x86_64 | 在实际 Android 来宾运行 KAM、BusyBox、模块和较早的核心；真实 TLS 1.3 上游，SOCKS5/HTTP CONNECT 各 256 KiB 回显；规则命中、重复应用、坏配置和五轮启停。另测 Android 防火墙 | KAM 包 SHA-256 为 `0a2d09c139f915151c72172118205b995cce70971cb4fca5e749a9aea2d53ad8`。只将这些证据归于当时构建。Android 用户空间服务精简运行，未加载真实手机管理器 |
 | Chromium | 320、390、768、1280 像素宽，三种语言，真实 DOM，模拟 KernelSU 调用接口 | Android 实机管理器、TalkBack 与软键盘仍需独立测试 |
 | Unix / Android 交付 | shell CLI，原生 Web 文件，单 ABI KAM 打包与文件核对。ZIP 差分重建需可信目标 SHA-256 | 自动在线升级、旧版状态迁移和新项目 GitHub Actions 均有独立验收条件 |
-| 性能 | 两个二进制各七个进程，记录 RSS、吞吐和往返分位数 | 早期核心、单 TCP 回环负载、无外部规则，详细条件见核心源树 docs/bench-qemu.json |
+| 性能 | 两个二进制各七个进程，记录 RSS、吞吐和往返分位数 | 当前 Linux 构建、单 TCP 回环负载、无外部规则，详细条件见核心源树 docs/bench-qemu.json |
 
 第一份本地 Android 结果早于 Shadowsocks TCP、SOCKS5 UDP、独立 cgroup 守卫打包等改动。API 29、35 的工作流文件可随仓库提交触发。正式发布需要同一源码提交及同一安装包在对应环境获得结果。
 
