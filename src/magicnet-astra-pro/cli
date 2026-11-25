@@ -31,11 +31,13 @@ error() { printf 'magicnet: %s\n' "$1" >&2; }
 usage() {
     cat <<'USAGE'
 magicnet status | show | log
-magicnet configure socks5://IP:PORT   (or HTTP, HTTPS, or an ss:// share link)
+magicnet configure socks5://HOST:PORT   (or HTTP, HTTPS, or an ss:// share link)
 magicnet import FILE|- [NODE_NUMBER]
 magicnet fetch HTTPS_URL [USER_AGENT] [NODE_NUMBER]
 magicnet start | stop
 magicnet patch OLD.zip DELTA.zip NEW.zip EXPECTED_SHA256
+magicnet traffic apps | status | clear | sync
+magicnet traffic apply app:PACKAGE | uid:APP_UID [tether:INTERFACE ...]
 magicnet dns apps | status | clear | sync
 magicnet dns apply app:PACKAGE | uid:APP_UID [tether:INTERFACE ...]
 USAGE
@@ -43,6 +45,7 @@ USAGE
 . "$root/lib/service.sh"
 . "$root/lib/subscription.sh"
 . "$root/lib/dns.sh"
+. "$root/lib/traffic.sh"
 
 # WebView sends base64 as an inert env value (the bridge interpolates env
 # assignments). Keep it out of the daemon and any children launched below.
@@ -55,7 +58,7 @@ case $cmd in
     status|show) status; exit;;
     log) [ ! -r "$state/core.log" ] || tail -n 40 "$state/core.log"; exit;;
     boot) [ -f "$state/enabled" ] || [ -e "$state/dns-scope" ] || [ -e "$state/dns-next" ] || exit 0;;
-    start|stop|dns|configure|import|fetch|web-configure|web-preview-file|web-preview-url|web-apply|uninstall) ;;
+    start|stop|dns|traffic|web-traffic|configure|import|fetch|web-configure|web-preview-file|web-preview-url|web-apply|uninstall) ;;
     *) usage >&2; exit 2;;
 esac
 
@@ -63,10 +66,6 @@ mkdir -p "$state" && chmod 700 "$state" || exit 1
 exec 9>"$state/control.lock" || exit 1
 command -v flock >/dev/null 2>&1 || { error busybox_required; exit 1; }
 flock -x 9 || { error lock_failed; exit 1; }
-case $cmd in
-    start) start_core && : >"$state/enabled"; exit;;
-    stop) stop_core && rm -f "$state/enabled"; exit;;
-esac
 work=$(mktemp -d "$state/.edit.XXXXXX") || exit 1
 trap 'rm -rf "$work"' EXIT
 trap 'exit 1' HUP INT TERM
@@ -79,21 +78,29 @@ for preview in "$state"/preview-feed.*; do
     if [ "$now" -lt "$newer" ] || [ $((now - newer)) -ge 600 ]; then rm -f "$preview"; fi
 done
 case $cmd in
+    start) start_services && : >"$state/enabled"; exit;;
+    stop) traffic_suspend && stop_core && rm -f "$state/enabled"; exit;;
+    traffic) traffic_manage "$@"; exit;;
     dns) dns_manage "$@"; exit;;
-    boot) dns_manage sync && { [ ! -f "$state/enabled" ] || start_core; }; exit;;
+    boot) dns_manage sync && { [ ! -f "$state/enabled" ] || start_services; }; exit;;
     uninstall)
         if [ -e "$state/dns-scope" ] || [ -e "$state/dns-next" ]; then dns_manage clear || exit 1; fi
-        stop_core && rm -f "$config" "$state/enabled" "$state/core.log" "$state/identity.txt" "$state"/preview-feed.*
+        if traffic_chosen; then traffic_manage clear || exit 1; fi
+        stop_daemon "$state/redirect.pid" && stop_core && rm -f "$state/redirect.log" "$config" "$state/enabled" "$state/core.log" "$state/identity.txt" "$state"/preview-feed.*
         exit;;
 esac
 [ -x "$core" ] || { error core_missing; exit 1; }
 case $cmd in
-    web-configure|web-preview-file|web-preview-url)
+    web-configure|web-traffic|web-preview-file|web-preview-url)
         [ -n "$wire" ] && [ "${#wire}" -le 43692 ] || { error web_limit; exit 2; }
         printf '%s' "$wire" | base64 -d > "$work/web-input" || { error invalid_input; exit 2; }
         unset wire
         exec < "$work/web-input"
         case $cmd in
+            web-traffic)
+                set --
+                while IFS= read -r item; do set -- "$@" "$item"; done
+                traffic_manage apply "$@"; exit;;
             web-configure) cmd=configure; set -- -;;
         esac;;
 esac

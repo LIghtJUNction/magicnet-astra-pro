@@ -52,7 +52,7 @@ class Module(unittest.TestCase):
         self.assertNotIn("user", self.cli("show").stdout)
         self.assertNotIn("p%40ss", self.cli("status").stdout)
 
-        invalid = ["socks5://127.0.0.1:1080", "socks5://name.example:1080",
+        invalid = ["socks5://127.0.0.1:1080", "socks5://-bad.example:1080",
                    'http://127.0.0.1:80"\ninvalid = "true']
         for endpoint in invalid:
             self.cli("configure", endpoint, success=False)
@@ -95,6 +95,24 @@ class Module(unittest.TestCase):
         self.assertIn("state=running", self.cli("status").stdout)
         self.cli("uninstall")
         self.assertFalse((self.state / "config.toml").exists())
+
+    def test_pending_scope_survives_rejected_restart(self):
+        self.cli("configure", "socks5://127.0.0.1:17013")
+        pending = self.state / "traffic-next"
+        pending.write_text("uid 10123\n")
+        fake = self.state / "xt"
+        fake.mkdir()
+        for tool in ["iptables", "ip6tables", "iptables-restore", "ip6tables-restore"]:
+            path = fake / tool
+            path.write_text("#!/bin/sh\nexit " + ("42" if tool == "iptables-restore" else "0") + "\n")
+            path.chmod(0o755)
+        env = {**self.env, "PATH": f"{fake}:{self.env['PATH']}"}
+        self.cli("start", env=env, success=False)
+        self.assertEqual(pending.read_text(), "uid 10123\n")
+        self.assertFalse((self.state / "pid").exists())
+        self.assertFalse((self.state / "redirect.pid").exists())
+        self.assertFalse((self.state / "enabled").exists())
+        pending.unlink()
 
     def test_stale_pid_never_signalled(self):
         self.state.mkdir()
