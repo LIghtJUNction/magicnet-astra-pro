@@ -4,11 +4,11 @@ MagicNet Astra Pro 把 Android 上的配置、启停和订阅选择交给一个 
 
 ## 连接
 
-在支持 KernelSU WebUI 桥接的管理器内打开模块页面，填写自己的上游或导入订阅。客户端支持 SOCKS5、HTTP CONNECT、带证书验证的 HTTPS CONNECT，以及三种经典 AEAD 加密方式的 Shadowsocks TCP 上游。通过 SOCKS5 上游时，还支持 SOCKS5 UDP ASSOCIATE。SOCKS5 和普通 HTTP 上游使用明文链路；跨公网使用 HTTPS 上游可保护凭据和转发流量。显式代理客户端也可以连接 `127.0.0.1:1080`，通过 `socks5h` 保留域名并让上游解析。
+在支持 KernelSU WebUI 桥接的管理器内打开模块页面，填写自己的上游或导入订阅。客户端支持 SOCKS5、HTTP CONNECT、带证书验证的 HTTPS CONNECT，以及三种经典 AEAD 加密方式的 Shadowsocks TCP 上游。通过 SOCKS5 上游时，还支持 SOCKS5 UDP ASSOCIATE。SOCKS5 和普通 HTTP 上游使用明文链路；跨公网使用 HTTPS 上游可保护凭据和转发流量。支持 SOCKS5 或 HTTP CONNECT 的客户端也可以直接连接 `127.0.0.1:1080`，通过 `socks5h` 保留域名并让上游解析。
 
 首次安装默认选择 TUN。配置可用上游并启动后，Android 用策略路由把本机应用 UID（10000 起）的 IPv4 和 IPv6 包交给虚拟接口 `magicnet0`。包内的 hev-socks5-tunnel 将 TCP 流和 UDP 数据报交给本机 magicbox，再由 magicbox 连接所选上游。核心及转发器以 root 身份建立连接，使用设备原有路由。UDP 需要支持 UDP ASSOCIATE 的 SOCKS5 上游。系统服务代应用发起的 DNS 查询和热点转发流量有各自的控制路径。
 
-在 WebUI 的「网络模式」或用 `cli mode tun`、`cli mode local` 选择模式。已有上游配置的旧安装升级后沿用本机代理模式，用户可以显式切换。用 `cli mode` 查看选择，`cli status` 中的 `configured_mode` 与 `effective_mode` 分别表示配置和实际运行状态。TUN 数据面的 IP 包携带目标地址；域名拦截表适用于把域名交给本机 SOCKS 入口的请求。
+在 WebUI 的「网络模式」或用 `cli mode tun`、`cli mode local` 选择模式。已有上游配置的旧安装升级后沿用本机转发模式，用户可以显式切换。用 `cli mode` 查看选择，`cli status` 中的 `configured_mode` 与 `effective_mode` 分别表示配置和实际运行状态。TUN 数据面的 IP 包携带目标地址；域名拦截表适用于把域名交给本机 SOCKS 入口的请求。
 
 ~~~sh
 cd /data/adb/modules/magicnet-astra-pro
@@ -18,7 +18,7 @@ cd /data/adb/modules/magicnet-astra-pro
 ./cli stop
 ~~~
 
-上游地址、订阅和 age 私钥均属于私有输入。首次配置保存在模块独立的数据目录中。首次远程导入通过核心的 HTTPS 客户端和经过认证的加密 DNS 下载，已连接时可经运行中的代理下载。远程订阅允许自定义 User-Agent，age 加密订阅需要可执行的 age 解密器和私有身份文件。各格式的可执行协议以 magicbox 的导入结果为准。
+上游地址、订阅和 age 私钥均属于私有输入。首次配置保存在模块独立的数据目录中。首次远程导入通过核心的 HTTPS 客户端和经过认证的加密 DNS 下载，已连接时可经已启动的转发服务下载。远程订阅允许自定义 User-Agent，age 加密订阅需要可执行的 age 解密器和私有身份文件。各格式的可执行协议以 magicbox 的导入结果为准。
 
 ### 自定义模块使用的加密 DNS
 
@@ -32,9 +32,9 @@ printf '%s\n' 'tls://192.0.2.53:853?server_name=resolver.example' > "$dir/resolv
     chmod 600 "$dir/resolver.new" && mv "$dir/resolver.new" "$dir/resolver"
 ~~~
 
-`resolver` 只存一行，IPv6 地址用方括号包围。文件应由 root 拥有，权限为 600 或 400。使用自定义 `MAGICNET_STATE_DIR` 时文件位于该目录。CLI 优先采用调用进程显式传入的 `MAGICBOX_RESOLVER`，其次读取此文件。两者都未设置时使用核心默认值。修改文件后，重启模块代理使运行中的服务采用新值。删除文件并重启可恢复默认。
+`resolver` 只存一行，IPv6 地址用方括号包围。文件应由 root 拥有，权限为 600 或 400。使用自定义 `MAGICNET_STATE_DIR` 时文件位于该目录。CLI 优先采用调用进程显式传入的 `MAGICBOX_RESOLVER`，其次读取此文件。两者都未设置时使用核心默认值。修改文件后，重启服务使新设置生效。删除文件并重启可恢复默认。
 
-WebUI、命令行和开机服务共用这个入口。它控制首次获取 HTTPS 订阅及域名节点启动时的 DNS 查询。已经运行的代理接收订阅请求时，由上游解析目的域名。选择的 DoT 服务可以看到交给它的名称。核心验证 TLS 证书，解析失败时终止操作。Android 系统与其他应用保留各自的 DNS 设置。
+WebUI、命令行和开机服务共用这个入口。它控制首次获取 HTTPS 订阅及域名节点启动时的 DNS 查询。通过运行中的服务获取订阅时，由上游解析目的域名。选择的 DoT 服务可以看到交给它的名称。核心验证 TLS 证书，解析失败时终止操作。Android 系统与其他应用保留各自的 DNS 设置。
 
 ## 按应用或热点转发 TCP
 
@@ -48,11 +48,11 @@ WebUI、命令行和开机服务共用这个入口。它控制首次获取 HTTPS
 ./cli traffic clear
 ~~~
 
-内核通过连接跟踪保存连接原本要去的 IP 和端口，magicbox 按此地址与上游建立连接。显式代理可以转交域名。透明 TCP 只收到目标 IP，需按域名过滤的应用应使用本机 SOCKS5 的远端解析。IPv4 与 IPv6 都有 NAT 时，状态显示 `dual-stack-redirect`。只有 IPv4 NAT 的内核显示 `ipv4-redirect-ipv6-block`。此时 IPv4 经代理，选中范围的 IPv6 公网 TCP 由过滤表丢弃。IPv6 过滤表也不可用时启用操作失败。
+内核通过连接跟踪保存连接原本要去的 IP 和端口，magicbox 按此地址与上游建立连接。SOCKS5 或 HTTP CONNECT 客户端可以转交域名。透明 TCP 只收到目标 IP，需按域名过滤的应用应使用本机 SOCKS5 的远端解析。IPv4 与 IPv6 都有 NAT 时，状态显示 `dual-stack-redirect`。只有 IPv4 NAT 的内核显示 `ipv4-redirect-ipv6-block`。此时 IPv4 由 magicbox 转发，选中范围的 IPv6 公网 TCP 由过滤表丢弃。IPv6 过滤表也不可用时启用操作失败。
 
-分流自动阻止选中 UID 和热点客户的 TCP/UDP 53、853。系统解析器代应用发起的查询归系统 UID，需独立验证。常规 UDP、QUIC、已有连接和未选应用沿用原有路径。代理进程使用 root UID。规则保留本地、私有、常见覆盖网地址及已有 NAT 规则的优先级。显式 IP 上游可在防火墙中直接绕过；域名上游由核心安全解析并检查启动时固定的对端地址。应用流量在常见 VPN 隧道接口上继续使用原有路由。热点入口在路由选择前处理。模块读取内核本地路由表以保留分配给本机的地址，接口地址变化后可执行 `cli traffic sync` 刷新。任意自定义 VPN 公网分流策略仍需单独验收。
+分流自动阻止选中 UID 和热点客户的 TCP/UDP 53、853。系统解析器代应用发起的查询归系统 UID，需独立验证。常规 UDP、QUIC、已有连接和未选应用沿用原有路径。magicbox 进程使用 root UID。规则保留本地、私有、常见覆盖网地址及已有 NAT 规则的优先级。显式 IP 上游可在防火墙中直接绕过；域名上游由核心安全解析并检查启动时固定的对端地址。应用流量在常见 VPN 隧道接口上继续使用原有路由。热点入口在路由选择前处理。模块读取内核本地路由表以保留分配给本机的地址，接口地址变化后可执行 `cli traffic sync` 刷新。任意自定义 VPN 公网分流策略仍需单独验收。
 
-Android 执行模块的 `service.sh` 后，模块先恢复已启用范围的 DNS 过滤，再解析上游和启动代理。上游启动失败时，已恢复的过滤继续生效。更早的开机阶段取决于管理器的启动时机。
+Android 执行模块的 `service.sh` 后，模块先恢复已启用范围的 DNS 过滤，再解析上游和启动转发服务。上游启动失败时，已恢复的过滤继续生效。更早的开机阶段取决于管理器的启动时机。
 
 `stop` 暂停转发并保留选择，下一次启动恢复。 `traffic clear` 清除分流以及与之配套的 DNS 规则。独立配置的 `dns apply` 规则继续生效。
 
