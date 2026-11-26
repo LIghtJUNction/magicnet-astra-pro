@@ -15,10 +15,14 @@ jobs:
           echo "sha=$revision" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          repository: LIghtJUNction/magicbox-core
+          repository: LIghtJUNction/magicbox
           ref: ${{ steps.lock.outputs.sha }}
           path: core
       - run: rustup toolchain install 1.100.0 --profile minimal --target aarch64-linux-android,x86_64-linux-android && rustup override set 1.100.0
+      - name: Build pinned TUN adapter for Linux and Android
+        run: |
+          sh scripts/build-tun.sh linux
+          sh scripts/build-tun.sh android
       - name: Build Linux and Android binaries
         working-directory: core
         run: |
@@ -34,6 +38,7 @@ jobs:
           python3 rules/build.py --out build/rules --all
           python3 tests/delta_test.py
           python3 tests/module_test.py core/target/release/magicbox
+          sudo python3 tests/tun-netns.py core/target/release/magicbox build/tun/jni/bin/hev-socks5-tunnel
           cc -O2 -Wall -Wextra -Werror tests/firewall-probe.c -o /tmp/mna-firewall-probe
           sudo unshare -n sh -c 'ip link set lo up; export MAGICNET_FIREWALL_FIXTURE=1; sh tests/firewall-netns.sh "$PWD/src/magicnet-astra-pro" /tmp/mna-firewall-probe'
           sudo unshare -nm --propagation private sh -ec 'mount -t proc proc /proc; ip link set lo up; export MAGICNET_FIREWALL_FIXTURE=1; sh tests/firewall-tether.sh "$PWD/src/magicnet-astra-pro" /tmp/mna-firewall-probe'

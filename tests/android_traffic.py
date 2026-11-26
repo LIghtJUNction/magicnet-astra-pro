@@ -32,6 +32,7 @@ def main(module, probe):
             assert "dev mn-rt0 " in route and "src 192.0.2.222" in route, route
             if medium == "bridge":
                 assert not g.sh("ls -A /sys/class/net/mn-rt0/brif")
+            g.sh(ctl + "mode local")
             g.sh(ctl + f"configure socks5://127.0.0.1:{peer_port}")
             g.sh(ctl + "start")
             g.sh(ctl + f"traffic apply uid:{selected_uid}")

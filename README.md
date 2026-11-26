@@ -4,9 +4,11 @@ MagicNet Astra Pro 把 Android 上的配置、启停和订阅选择交给一个 
 
 ## 连接
 
-在支持 KernelSU WebUI 桥接的管理器内打开模块页面，填写自己的上游或导入订阅。客户端支持 SOCKS5、HTTP CONNECT、带证书验证的 HTTPS CONNECT，以及三种经典 AEAD 加密方式的 Shadowsocks TCP 上游。通过 SOCKS5 上游时，还支持 SOCKS5 UDP ASSOCIATE。SOCKS5 和普通 HTTP 上游使用明文链路；跨公网使用 HTTPS 上游可保护凭据和转发流量。运行后，支持代理的应用使用本机地址 `127.0.0.1:1080`。SOCKS 客户端选择远端解析，例如使用 `socks5h`。
+在支持 KernelSU WebUI 桥接的管理器内打开模块页面，填写自己的上游或导入订阅。客户端支持 SOCKS5、HTTP CONNECT、带证书验证的 HTTPS CONNECT，以及三种经典 AEAD 加密方式的 Shadowsocks TCP 上游。通过 SOCKS5 上游时，还支持 SOCKS5 UDP ASSOCIATE。SOCKS5 和普通 HTTP 上游使用明文链路；跨公网使用 HTTPS 上游可保护凭据和转发流量。显式代理客户端也可以连接 `127.0.0.1:1080`，通过 `socks5h` 保留域名并让上游解析。
 
-模块自带域名拦截表。客户端把应用交付的目标域名原样发给上游，默认监听回环地址。没有有效配置时不会自动接管网络。透明 TUN、通用 UDP 数据面、蜂窝切换、旁路 VPN 和热点客户端的完整转发仍属于稳定版验收项。
+首次安装默认选择 TUN。配置可用上游并启动后，Android 用策略路由把本机应用 UID（10000 起）的 IPv4 和 IPv6 包交给虚拟接口 `magicnet0`。包内的 hev-socks5-tunnel 将 TCP 流和 UDP 数据报交给本机 magicbox，再由 magicbox 连接所选上游。核心及转发器以 root 身份建立连接，使用设备原有路由。UDP 需要支持 UDP ASSOCIATE 的 SOCKS5 上游。系统服务代应用发起的 DNS 查询和热点转发流量有各自的控制路径。
+
+在 WebUI 的「网络模式」或用 `cli mode tun`、`cli mode local` 选择模式。已有上游配置的旧安装升级后沿用本机代理模式，用户可以显式切换。用 `cli mode` 查看选择，`cli status` 中的 `configured_mode` 与 `effective_mode` 分别表示配置和实际运行状态。TUN 数据面的 IP 包携带目标地址；域名拦截表适用于把域名交给本机 SOCKS 入口的请求。
 
 ~~~sh
 cd /data/adb/modules/magicnet-astra-pro
@@ -68,10 +70,10 @@ Android 执行模块的 `service.sh` 后，模块先恢复已启用范围的 DNS
 
 ## 从源码生成一个 ABI 的 KAM ZIP
 
-`core.lock` 指定配套 magicbox 源码提交。`rules/sources.lock.json` 固定规则来源。开发机使用 Rust、Android NDK、KAM 和 Python 标准库。安卓工具链只在构建阶段使用。下例使用已安装的 x86-64 Linux 主机 NDK 和 ARM64 Android 目标。
+`core.lock` 指定配套 magicbox 源码提交，`tun.lock` 固定 hev-socks5-tunnel 及其 Git 子模块所用的源码版本。`rules/sources.lock.json` 固定规则来源。开发机使用 Rust、Android NDK、KAM 和 Python 标准库。安卓工具链只在构建阶段使用。下例使用已安装的 x86-64 Linux 主机 NDK 和 ARM64 Android 目标。
 
 ~~~sh
-git clone https://github.com/LIghtJUNction/magicbox-core.git core
+git clone https://github.com/LIghtJUNction/magicbox.git core
 git -C core checkout --detach "$(cat core.lock)"
 python3 rules/build.py --out build/rules
 rustup target add aarch64-linux-android
@@ -80,6 +82,7 @@ CC_aarch64_linux_android="$toolchain/aarch64-linux-android23-clang" \
 AR_aarch64_linux_android="$toolchain/llvm-ar" \
 CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$toolchain/aarch64-linux-android23-clang" \
 cargo build --manifest-path core/Cargo.toml --release --locked --target aarch64-linux-android
+sh scripts/build-tun.sh android
 python3 scripts/package.py --abi arm64-v8a --binary core/target/aarch64-linux-android/release/magicbox \
   --rules build/rules --out dist/magicnet-arm64-v8a.zip
 ~~~
@@ -99,4 +102,4 @@ python3 scripts/delta.py old.zip new.zip change.zip
 
 候选工作流覆盖 Linux、真实 Rust 核心、WebUI 和安卓模拟器。工作流文件和单轮本地结果分别记录。稳定版的替换条件及缺口见 [验收记录](docs/acceptance.md)。
 
-程序采用 MIT 许可。内置域名表随包提供 HaGeZi 来源说明和 GPL 许可文本。可选规则目录保留其各自的上游信息。
+模块程序采用 MIT 许可。安装包随 TUN 转发器附带各组件的许可文本。内置域名表随包提供 HaGeZi 来源说明和 GPL 许可文本。可选规则目录保留其各自的上游信息。

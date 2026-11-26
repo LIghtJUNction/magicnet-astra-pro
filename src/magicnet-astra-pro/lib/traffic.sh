@@ -99,10 +99,14 @@ traffic_sync() {
 }
 
 start_services() {
+    desired=$(configured_mode) || return 1
     started=no
     if ! owned_pid >/dev/null; then start_core || return 1; started=yes; fi
-    if traffic_sync; then return 0; fi
-    if [ "$started" = yes ]; then stop_daemon "$state/redirect.pid" && stop_core; fi
+    case $desired in
+        tun) tun_start && traffic_sync && return 0;;
+        local) tun_stop && traffic_sync && return 0;;
+    esac
+    if [ "$started" = yes ]; then tun_stop && stop_daemon "$state/redirect.pid" && stop_core; fi
     return 1
 }
 

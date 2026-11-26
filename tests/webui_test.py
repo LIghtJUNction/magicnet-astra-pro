@@ -19,14 +19,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 BRIDGE = """
 window.calls = [];
-let upstream = "", state = "stopped", scope = [];
+let upstream = "", state = "stopped", mode = "tun", scope = [];
 window.ksu = {exec(command, opts, callback) {
   const payload = JSON.parse(opts).env?.MAGICNET_INPUT_B64 || "";
   window.calls.push({command, payload});
   const action = command.split("/cli ").pop();
   let output = "", code = 0, error = "";
   if (action === "status") {
-    output = "state=" + state + "\\nautostart=no\\nlisten=127.0.0.1:1080\\nupstream=" + upstream;
+    const observed = state === "running" && mode === "tun" && window.tunFailure ? "degraded" : state;
+    const effective = observed === "running" ? mode : observed === "stopped" ? "off" : "degraded";
+    output = "configured_mode=" + mode + "\\neffective_mode=" + effective + "\\nstate=" + observed + "\\nautostart=no\\nlisten=127.0.0.1:1080\\nupstream=" + upstream;
+  } else if (action === "mode tun" || action === "mode local") {
+    if (action === "mode tun" && window.modeConflict) { code = 1; error = "magicnet: tun_conflict"; }
+    else mode = action.split(" ")[1];
   } else if (action === "web-configure") {
     if (atob(payload).includes("invalid")) { code = 1; error = "magicnet: invalid_config"; }
     else upstream = "socks5://192.0.2.1:8000";
@@ -60,6 +65,19 @@ def exercise(url, chrome, screenshot):
         page.get_by_text("待配置", exact=True).wait_for()
         assert page.locator("#toggle").is_disabled()
 
+        assert page.locator("#mode").input_value() == "tun"
+        assert page.locator("#mode").is_enabled()
+        assert "TUN" in page.locator("#scope").inner_text()
+        page.locator("#mode").select_option("local")
+        page.get_by_text("支持 SOCKS5 与 HTTP CONNECT。请在使用代理的应用内填写本机地址。").wait_for()
+        page.evaluate("window.modeConflict = true")
+        page.locator("#mode").select_option("tun")
+        page.get_by_text("TUN 接口或策略路由表已被占用。").wait_for()
+        assert page.locator("#mode").input_value() == "local"
+        page.evaluate("window.modeConflict = false")
+        page.locator("#mode").select_option("tun")
+        page.get_by_text("应用流量通过 TUN，UDP 需要支持 UDP 的 SOCKS5 上游。").wait_for()
+
         secret = "socks5://example:password@192.0.2.1:8000"
         page.locator("#endpoint").fill(secret)
         page.locator("#save").click()
@@ -90,6 +108,10 @@ def exercise(url, chrome, screenshot):
         page.locator("#endpoint").fill("invalid'$()")
         page.locator("#save").click()
         page.locator("#message").get_by_text("节点地址无效", exact=False).wait_for()
+        page.evaluate("window.tunFailure = true")
+        page.locator("#refresh").click()
+        page.get_by_text("需要恢复", exact=True).wait_for()
+        assert page.locator("#toggle").inner_text() == "停止代理"
         page.locator("#toggle").click()
         page.get_by_text("已停止", exact=True).wait_for()
 

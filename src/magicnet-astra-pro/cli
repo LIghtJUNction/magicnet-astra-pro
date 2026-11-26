@@ -35,6 +35,7 @@ magicnet configure socks5://HOST:PORT   (or HTTP, HTTPS, or an ss:// share link)
 magicnet import FILE|- [NODE_NUMBER]
 magicnet fetch HTTPS_URL [USER_AGENT] [NODE_NUMBER]
 magicnet start | stop
+magicnet mode [tun|local]
 magicnet patch OLD.zip DELTA.zip NEW.zip EXPECTED_SHA256
 magicnet traffic apps | status | clear | sync
 magicnet traffic apply app:PACKAGE | uid:APP_UID [tether:INTERFACE ...]
@@ -43,6 +44,7 @@ magicnet dns apply app:PACKAGE | uid:APP_UID [tether:INTERFACE ...]
 USAGE
 }
 . "$root/lib/service.sh"
+. "$root/lib/tun.sh"
 . "$root/lib/subscription.sh"
 . "$root/lib/dns.sh"
 . "$root/lib/traffic.sh"
@@ -56,6 +58,7 @@ cmd=${1:-help}
 case $cmd in
     help|-h|--help) usage; exit;;
     status|show) status; exit;;
+    mode) [ "$#" -gt 0 ] || { configured_mode; exit; }; [ "$#" -eq 1 ] || { error invalid_mode; exit 2; };;
     log) [ ! -r "$state/core.log" ] || tail -n 40 "$state/core.log"; exit;;
     boot) [ -f "$state/enabled" ] || [ -e "$state/dns-scope" ] || [ -e "$state/dns-next" ] || exit 0;;
     start|stop|dns|traffic|web-traffic|configure|import|fetch|web-configure|web-preview-file|web-preview-url|web-apply|uninstall) ;;
@@ -78,8 +81,9 @@ for preview in "$state"/preview-feed.*; do
     if [ "$now" -lt "$newer" ] || [ $((now - newer)) -ge 600 ]; then rm -f "$preview"; fi
 done
 case $cmd in
+    mode) set_mode "$1"; exit;;
     start) start_services && : >"$state/enabled"; exit;;
-    stop) traffic_suspend && stop_core && rm -f "$state/enabled"; exit;;
+    stop) tun_stop && traffic_suspend && stop_core && rm -f "$state/enabled"; exit;;
     traffic) traffic_manage "$@"; exit;;
     dns) dns_manage "$@"; exit;;
     boot)
@@ -90,9 +94,10 @@ case $cmd in
         dns_manage sync && [ "$guard_ready" = yes ] && { [ ! -f "$state/enabled" ] || start_services; }
         exit;;
     uninstall)
+        tun_stop || exit 1
         if [ -e "$state/dns-scope" ] || [ -e "$state/dns-next" ]; then dns_manage clear || exit 1; fi
         if traffic_chosen; then traffic_manage clear || exit 1; fi
-        stop_daemon "$state/redirect.pid" && stop_core && rm -f "$state/redirect.log" "$config" "$state/enabled" "$state/core.log" "$state/identity.txt" "$state/resolver" "$state"/preview-feed.*
+        stop_daemon "$state/redirect.pid" && stop_core && rm -f "$state/redirect.log" "$config" "$state/enabled" "$state/core.log" "$state/identity.txt" "$state/resolver" "$state/mode" "$state/tun.log" "$state"/preview-feed.*
         exit;;
 esac
 [ -x "$core" ] || { error core_missing; exit 1; }

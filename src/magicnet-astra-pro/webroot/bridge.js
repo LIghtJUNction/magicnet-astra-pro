@@ -41,6 +41,10 @@ window.magicnet = (() => {
   return Object.freeze({
     available: () => typeof window.ksu?.exec === "function",
     status: () => call(cli + " status"),
+    mode: value => {
+      if (!["tun", "local"].includes(value)) throw new Error("invalid_mode");
+      return call(cli + " mode " + value);
+    },
     routeStatus: () => call(cli + " traffic status"),
     routeApps: () => call(cli + " traffic apps"),
     routeClear: () => call(cli + " traffic clear"),

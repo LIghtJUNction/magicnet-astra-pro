@@ -16,7 +16,7 @@ BINARY = Path(sys.argv.pop(1)).resolve() if len(sys.argv) > 1 else None
 RULES = "magicbox-exact-v1\nblocked.example\n"
 
 
-class Module(unittest.TestCase):
+class ModuleFixture(unittest.TestCase):
     def setUp(self):
         work = tempfile.TemporaryDirectory()
         self.addCleanup(work.cleanup)
@@ -40,6 +40,40 @@ class Module(unittest.TestCase):
         if success is not None:
             self.assertEqual(result.returncode == 0, success, result.stderr + result.stdout)
         return result
+
+
+class TunDefault(ModuleFixture):
+    def test_fresh_install_fails_cleanly_without_tunnel(self):
+        self.assertEqual(self.cli("mode").stdout.strip(), "tun")
+        self.cli("configure", "socks5://127.0.0.1:17011")
+        for _ in range(2):
+            self.cli("start", success=False)
+            status = self.cli("status").stdout.splitlines()
+            for field in ("state=stopped", "configured_mode=tun", "effective_mode=off", "autostart=no"):
+                self.assertIn(field, status)
+            self.assertFalse((self.state / "pid").exists())
+            self.cli("stop")
+        self.cli("mode", "local")
+        self.cli("start")
+        self.assertIn("effective_mode=local", self.cli("status").stdout.splitlines())
+        self.cli("mode", "tun", success=False)
+        self.assertEqual(self.cli("mode").stdout.strip(), "local")
+        self.assertIn("effective_mode=local", self.cli("status").stdout.splitlines())
+
+    def test_existing_configuration_keeps_local_mode(self):
+        self.state.mkdir()
+        original = (self.root / "default.toml").read_text() + 'upstream = "http://127.0.0.1:17012"\n'
+        (self.state / "config.toml").write_text(original)
+        self.assertEqual(self.cli("mode").stdout.strip(), "local")
+        self.cli("start")
+        self.assertIn("effective_mode=local", self.cli("status").stdout.splitlines())
+        self.assertEqual((self.state / "config.toml").read_text(), original)
+
+
+class Module(ModuleFixture):
+    def setUp(self):
+        super().setUp()
+        self.cli("mode", "local")
 
     def test_first_run_and_rollback_on_rejection(self):
         self.assertIn("state=stopped", self.cli("status").stdout)
@@ -66,7 +100,6 @@ class Module(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("openssl"), "openssl required")
     def test_resolver_file_drives_web_boot_and_explicit_override(self):
-        self.state.mkdir(mode=0o700)
         resolver = self.state / "resolver"
         pem, key = self.state / "ca.pem", self.state / "server.key"
         subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
@@ -311,7 +344,6 @@ case $1 in -4) cat "$MAGICNET_STATE_DIR/v4";; -6) cat "$MAGICNET_STATE_DIR/v6";;
         self.cli("traffic", "clear", env=env)
 
     def test_stale_pid_never_signalled(self):
-        self.state.mkdir()
         with subprocess.Popen(["sleep", "20"]) as foreign:
             try:
                 stat = Path(f"/proc/{foreign.pid}/stat").read_text().split(") ", 1)[1].split()
@@ -343,7 +375,6 @@ case $1 in -4) cat "$MAGICNET_STATE_DIR/v4";; -6) cat "$MAGICNET_STATE_DIR/v6";;
 
     @unittest.skipUnless(shutil.which("curl") and shutil.which("openssl"), "curl and openssl required")
     def test_real_subscription_https_through_socks5(self):
-        self.state.mkdir()
         key, cert = self.state / "test.key", self.state / "test.pem"
         subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
                         "-subj", "/CN=subscriptions.invalid", "-addext", "subjectAltName=DNS:subscriptions.invalid",
@@ -403,7 +434,6 @@ case $1 in -4) cat "$MAGICNET_STATE_DIR/v4";; -6) cat "$MAGICNET_STATE_DIR/v6";;
 
     @unittest.skipUnless(shutil.which("age") and shutil.which("age-keygen"), "age tools required")
     def test_real_age_binary_and_armored_feeds(self):
-        self.state.mkdir()
         identity = self.state / "identity.txt"
         subprocess.run(["age-keygen", "-o", str(identity)], check=True, capture_output=True)
         public = subprocess.check_output(["age-keygen", "-y", str(identity)], text=True).strip()

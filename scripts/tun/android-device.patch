@@ -1,0 +1,11 @@
+diff --git a/src/hev-tunnel-linux.c b/src/hev-tunnel-linux.c
+--- a/src/hev-tunnel-linux.c
++++ b/src/hev-tunnel-linux.c
+@@ -58,3 +58,7 @@ hev_tunnel_open (const char *name, int multi_queue, const char *guid)
+     fd = hev_task_io_open ("/dev/net/tun", O_RDWR | O_CLOEXEC);
++#ifdef __ANDROID__
++    if (fd < 0 && errno == ENOENT)
++        fd = hev_task_io_open ("/dev/tun", O_RDWR | O_CLOEXEC);
++#endif
+     if (fd < 0)
+         goto exit;

@@ -1,8 +1,9 @@
-"""Build a KAM module from one Android ELF and one immutable rules directory."""
+"""Build and verify a single-ABI KAM module."""
 import argparse
 import hashlib
 import os
 from pathlib import Path
+import re
 import shutil
 import struct
 import subprocess
@@ -23,8 +24,6 @@ def check_elf(blob, abi):
 
 
 def stage(destination, binary, rules, abi, for_android=False):
-    core = binary.read_bytes()
-    check_elf(core, abi)
     target = destination / "src" / MODULE
     shutil.copytree(ROOT / "src" / MODULE, target, ignore=shutil.ignore_patterns("bin", "rules"))
     shutil.copytree(ROOT / "hooks", destination / "hooks")
@@ -41,15 +40,37 @@ def stage(destination, binary, rules, abi, for_android=False):
             raise ValueError("unrecognized hook interpreter")
         hook.write_bytes(b"#!/system/bin/sh\n" + body)
     (target / "bin").mkdir()
-    (target / "bin/magicbox").write_bytes(core)
-    (target / "bin/magicbox").chmod(0o755)
+    tun = ROOT / "build/tun"
+    for name, path in (
+        ("magicbox", binary),
+        ("magicbox-dns-guard", binary.with_name("magicbox-dns-guard")),
+        ("hev-socks5-tunnel", tun / "libs" / abi / "hev-socks5-tunnel-bin"),
+    ):
+        data = path.read_bytes()
+        check_elf(data, abi)
+        executable = target / "bin" / name
+        executable.write_bytes(data)
+        executable.chmod(0o755)
     (target / "rules").mkdir()
     for name in ("block.txt", "NOTICE.txt", "COPYING.HaGeZi"):
         shutil.copy2(rules / name, target / "rules" / name)
-    guard = binary.with_name("magicbox-dns-guard").read_bytes()
-    check_elf(guard, abi)
-    (target / "bin/magicbox-dns-guard").write_bytes(guard)
-    (target / "bin/magicbox-dns-guard").chmod(0o755)
+    licenses = target / "licenses"
+    licenses.mkdir()
+    for component, subdir in (
+        ("hev-socks5-tunnel", "."), ("hev-socks5-core", "src/core"),
+        ("hev-task-system", "third-part/hev-task-system"),
+        ("lwip", "third-part/lwip"), ("yaml", "third-part/yaml"),
+    ):
+        shutil.copyfile(tun / "jni" / subdir / "LICENSE", licenses / component)
+    shutil.copyfile(ROOT / "scripts/tun/COPYING.libyaml", licenses / "libyaml")
+    # lwIP also carries file-specific BSD notices with additional contributors.
+    notices = set()
+    for path in (tun / "jni/third-part/lwip/src").rglob("*"):
+        if path.suffix in (".c", ".h"):
+            for block in re.findall(rb"/\*.*?\*/", path.read_bytes(), re.S):
+                if b"copyright" in block.lower():
+                    notices.add(block.replace(b"\r\n", b"\n"))
+    (licenses / "lwip-source-notices").write_bytes(b"\n\n".join(sorted(notices)) + b"\n")
     shutil.copy2(ROOT / "LICENSE", target / "LICENSE")
     return target
 

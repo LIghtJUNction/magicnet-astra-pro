@@ -124,6 +124,7 @@ def run(archive, busybox):
         worker = threading.Thread(target=relay, daemon=True)
         worker.start()
         try:
+            guest.sh(ctl + "mode local")
             assert "no_upstream" in guest.sh(ctl + "start", success=False)
             endpoint = "'https://127.0.0.1:19443?server_name=relay.test'"
             guest.sh(ctl + "configure " + endpoint)

@@ -31,7 +31,8 @@ owned_pid() {
     case $pid in ''|*[!0-9]*|0|1) return 1;; esac
     [ -n "$ticks" ] && [ "$(start_ticks "$pid")" = "$ticks" ] || return 1
     exe=$(readlink "/proc/$pid/exe" 2>/dev/null) || return 1
-    case $exe in "$core"|"$core (deleted)") ;; *) return 1;; esac
+    case $pidfile in "$state/tun.pid") target=$tun_bin;; *) target=$core;; esac
+    case $exe in "$target"|"$target (deleted)") ;; *) return 1;; esac
     printf '%s\n' "$pid"
     return 0
 }
@@ -82,7 +83,7 @@ start_daemon() {
 start_core() { start_daemon "$state/pid" "$state/core.log" "$listener" run "$config"; }
 
 status() {
-    if owned_pid >/dev/null; then echo 'state=running'; else echo 'state=stopped'; fi
+    mode_status
     if [ -f "$state/enabled" ]; then echo 'autostart=yes'; else echo 'autostart=no'; fi
     printf 'listen=%s\n' "$listener"
     # Config is authored below. Strip all userinfo before emitting anything.
@@ -100,6 +101,9 @@ status() {
 
 apply_candidate() {
     "$core" check "$work/new.toml" >/dev/null 2>&1 || { error invalid_config; return 1; }
+    if [ ! -f "$state/mode" ]; then
+        mode=$(configured_mode) && save_mode "$mode" || return 1
+    fi
     if [ -f "$config" ] && cmp -s "$work/new.toml" "$config"; then return 0; fi
     active=no
     if owned_pid >/dev/null; then

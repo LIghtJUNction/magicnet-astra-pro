@@ -178,6 +178,7 @@ def router(root, binary, ns):
         proxy.listen()
         errors = []
         threading.Thread(target=fake_proxy, args=(proxy, errors), daemon=True).start()
+        ctl("mode", "local")
         ctl("configure", f"socks5://127.0.0.1:{proxy.getsockname()[1]}")
         ctl("start")
         try:

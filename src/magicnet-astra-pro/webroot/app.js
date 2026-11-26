@@ -4,6 +4,14 @@ const {t} = window.strings;
 const api = window.magicnet;
 const $ = id => document.getElementById(id);
 const errors = {
+  tun_engine_missing: "模块缺少 TUN 引擎。",
+  tun_root_required: "TUN 需要 root 权限。",
+  tun_conflict: "TUN 接口或策略路由表已被占用。",
+  tun_ip_unavailable: "设备无法读取策略路由。",
+  tun_start_failed: "TUN 接口未就绪，请查看 tun.log。",
+  tun_route_failed: "设备未能设置双栈 TUN 路由。",
+  tun_rule_failed: "设备未能设置应用 UID 路由规则。",
+  tun_cleanup_failed: "TUN 策略清理失败，请重试停止操作。",
   invalid_interface: "请填写热点的实际接口名称。",
   invalid_scope: "请选择至少一个应用或热点接口。",
   age_identity_required: "请先为模块配置 age 身份文件。",
@@ -41,13 +49,20 @@ let notice = "";
 function render() {
   const connected = Boolean(snapshot);
   const running = snapshot?.state === "running";
+  const degraded = snapshot?.state === "degraded";
   const upstream = snapshot?.upstream;
+  const configured = snapshot?.configured_mode;
+  $("mode").value = configured || "local";
+  $("mode").disabled = busy || !["tun", "local"].includes(configured);
+  $("scope").textContent = connected ? t(configured === "tun" ?
+    "应用流量通过 TUN，UDP 需要支持 UDP 的 SOCKS5 上游。" :
+    "支持 SOCKS5 与 HTTP CONNECT。请在使用代理的应用内填写本机地址。") : "";
   document.body.dataset.running = running ? "yes" : "no";
-  $("state").textContent = t(connected ? (running ? "运行中" : upstream ? "已停止" : "待配置") : "未连接");
+  $("state").textContent = t(connected ? (degraded ? "需要恢复" : running ? "运行中" : upstream ? "已停止" : "待配置") : "未连接");
   $("listen").textContent = snapshot?.listen || "—";
   $("upstream").textContent = upstream || t(connected ? "未设置" : "—");
-  $("toggle").textContent = t(running ? "停止代理" : "启动代理");
-  $("toggle").disabled = busy || !(connected && (running || upstream));
+  $("toggle").textContent = t(running || degraded ? "停止代理" : "启动代理");
+  $("toggle").disabled = busy || !(connected && (running || degraded || upstream));
   $("save").textContent = t(running ? "保存并应用" : "保存并启动");
   $("save").disabled = busy || !connected;
   $("preview").disabled = busy || !connected;
@@ -63,7 +78,7 @@ async function readState() {
     const split = line.indexOf("=");
     if (split >= 0) fields[line.slice(0, split)] = line.slice(split + 1);
   }
-  if (!["running", "stopped"].includes(fields.state)) throw new Error("operation_failed");
+  if (!["running", "stopped", "degraded"].includes(fields.state)) throw new Error("operation_failed");
   if ($("routing").open) {
     const info = await api.routeStatus().catch(() => "");
     fields.redirect = info.includes("redirect=running");
@@ -91,7 +106,11 @@ async function perform(action, message = "") {
 }
 
 $("refresh").addEventListener("click", () => perform(() => {}));
-$("toggle").addEventListener("click", () => perform(() => snapshot.state === "running" ? api.stop() : api.start()));
+$("toggle").addEventListener("click", () => perform(() => snapshot.state !== "stopped" ? api.stop() : api.start()));
+$("mode").addEventListener("change", event => {
+  const requested = event.target.value;
+  perform(() => api.mode(requested));
+});
 $("endpoint-form").addEventListener("submit", event => {
   event.preventDefault();
   perform(async () => {
