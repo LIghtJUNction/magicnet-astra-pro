@@ -8,7 +8,7 @@ import re
 import time
 
 from android_guest import Guest
-from routing_apps import installed_clients
+from routing_apps import installed_clients, start_selected_activity
 
 
 def rules(g):
@@ -41,7 +41,7 @@ def exercise(serial, archive, busybox, probe):
         # Even a failing probe cannot leave the emulator on a physical uplink.
         block = "OUTPUT ! -o magicnet0 -p tcp -d 8.8.4.4/32 --dport 19437 -j REJECT"
         g.sh("iptables -C " + block, success=False)
-        with installed_clients(g, str(probe)) as clients, ExitStack() as sentinels:
+        with installed_clients(g, str(probe), selected_activity=True) as clients, ExitStack() as sentinels:
             after_install = rules(g)
             change = diff_rules(before_apks, after_install)
             if change:
@@ -70,6 +70,7 @@ def exercise(serial, archive, busybox, probe):
                         assert any(line.startswith("9801:") and "lookup 19878" in line for line in lines), lines
                     g.sh(ctl + f"configure socks5://127.0.0.1:{port}")
                     g.sh(ctl + "start")
+                    start_selected_activity(g, uid)
                     status = set(g.sh(ctl + "status").splitlines())
                     assert {"configured_mode=tun", "effective_mode=tun", "state=running"} <= status, status
                     # Both sockets belong to this guest. The synthetic upstream
@@ -79,7 +80,8 @@ def exercise(serial, archive, busybox, probe):
                     assert "ORIGINAL_DESTINATION_AND_FIN" in evidence, evidence
                     print(f"UID {uid}: original target, request payload, FIN and return echo", flush=True)
                 except Exception as error:
-                    error.add_note(g.sh(f"ip -4 rule show; ip -6 rule show; ip link show; "
+                    error.add_note(g.sh(f"ip -4 rule show; ip -6 rule show; ip -s link show dev magicnet0; "
+                                        f"ip -4 route get 8.8.4.4 uid {uid}; am get-uid-state {uid}; "
                                         f"cat {g.path}/peer.log {g.path}/state/tun.log "
                                         f"{g.path}/state/core.log 2>/dev/null; true"))
                     raise

@@ -1,11 +1,12 @@
 # 重建验收记录
 
-## 默认 TUN 的本地验收
+## 默认 TUN 验收
 
 Linux 隔离网络实测覆盖新安装默认 `tun`、应用 UID 的 IPv4/IPv6 TCP 与 UDP 往返、客户端写半关闭后的回包、重复启停、第二个地址族的策略安装失败回滚，以及转发器退出时阻断直连。该测试使用本机合成上游，可通过 `tests/tun-netns.py` 重放。
 
 Android 10（API 29、x86_64、AOSP userdebug、SELinux enforcing）从 KAM ZIP 加载模块，使用 `/dev/tun` 建立 `magicnet0`。通过 PackageManager 安装的应用（UID 10119）在同一来宾内向合成上游发送完整请求。上游读到 FIN 后才发回响应，应用收到了全部字节。保持测试应用的安装状态一致后，停服时接口消失、模块自有路由清除，双栈策略规则逐行恢复，外部哨兵规则保留。真实 ARM64 手机、蜂窝网络切换和 OEM 内核兼容性仍需设备验收。
 
+Android 15（API 35、x86_64）的对照使用同一台模拟器和同一个模块 ZIP。仅通过 `run-as` 启动探针时，ActivityManager 将测试应用记为 `NONEXISTENT`，TCP 连接超时。启动测试应用的 Activity 并确认 UID 进入 `TOP` 后，应用收齐了上游在 FIN 后发回的字节，停服后双栈策略也恢复。正式套件使用前台应用执行这项验收。[Android 15 对照记录](https://github.com/LIghtJUNction/magicnet-astra-pro/actions/runs/45780650383/job/139774989556)
 
 基线为 MagicNet v1.9.3 的公开产品行为清单。只依据外部可观察行为设计与比较。下列编号用于回溯原要求。原行包括多个成功和故障分支，只有全部有证据时才能将该项标为通过。[固定基线](https://github.com/LIghtJUNction/MagicNet/blob/ef24ce30de68f6e46d99f6c54736c004b372c71f/recipes/magicnet/ACCEPTANCE.md)
 
