@@ -7,8 +7,19 @@ case $ANDROID_SERIAL in emulator-[0-9]*) ;; *) echo 'Exactly one emulator is req
 is_virtual=$(adb shell 'getprop ro.kernel.qemu; getprop ro.boot.qemu' | tr -d '\r')
 printf '%s\n' "$is_virtual" | grep -Fxq 1
 tools="$RUNNER_TEMP/magicnet-tools"
-adb root
-adb wait-for-device
+# adbd can close its transport before the host receives the root reply.
+for attempt in 1 2 3; do
+    if [ "$(timeout 8 adb shell id -u | tr -d '\r')" = 0 ]; then
+        break
+    fi
+    timeout 10 adb root || true
+    timeout 15 adb wait-for-device || true
+    sleep 1
+done
+if [ "$(timeout 8 adb shell id -u | tr -d '\r')" != 0 ]; then
+    echo "Unable to obtain UID 0 on $ANDROID_SERIAL after three attempts." >&2
+    exit 1
+fi
 adb push "$tools/kam" /data/local/tmp/kam
 adb shell chmod 755 /data/local/tmp/kam
 if [ "$1" = package ]; then
