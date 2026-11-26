@@ -89,6 +89,16 @@ python3 scripts/package.py --abi arm64-v8a --binary core/target/aarch64-linux-an
 
 打包器检查 ELF 架构、模块元数据、清单和每个归档成员的内容。规则、原生二进制和 ZIP 作为构建产物分发。规则目录可通过 `--all` 另行生成可复用分类对象。默认安装只带生效的拦截表及其许可证。
 
+## 在 Linux 验证默认 TUN
+
+在已检出 `core.lock` 指定核心的模块目录执行以下命令。测试在新建的网络命名空间中以应用 UID 发送数据，本机 SOCKS5 测试上游返回响应。需要可用的 `/dev/net/tun`、iproute2 和创建网络命名空间的权限。
+
+~~~sh
+cargo build --manifest-path core/Cargo.toml --locked --release --target-dir build/host
+sh scripts/build-tun.sh linux
+sudo python3 tests/tun-netns.py build/host/release/magicbox build/tun/jni/bin/hev-socks5-tunnel
+~~~
+
 ## 增量更新
 
 有旧 ZIP 时，发布者可以生成针对该版本的差分。安装者从可信发布渠道取得新 ZIP 的 SHA-256，使用 shell 重建同一份 KAM 文件。旧包或补丁不匹配时，命令保留原有目标文件。重建后的 ZIP 可交给模块管理器。

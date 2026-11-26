@@ -69,6 +69,7 @@ class Upstream(socketserver.StreamRequestHandler):
             read_target(self.rfile, kind)
             self.wfile.write(bytes.fromhex("05000001") + bytes(6))
             assert self.rfile.read(len(PAYLOAD)) == PAYLOAD
+            assert self.rfile.read(1) == b"", "expected TCP write-half close"
             self.wfile.write(REPLY)
         else:
             assert cmd == 3 and kind == 1 and self.rfile.read(6) == bytes(6)
@@ -98,6 +99,8 @@ with socket.socket(int(family), int(proto)) as connection:
     connection.settimeout(6)
     connection.connect((host, int(port)))
     connection.sendall(bytes.fromhex(sys.stdin.readline()))
+    if int(proto) == socket.SOCK_STREAM:
+        connection.shutdown(socket.SHUT_WR)
     expected = bytes.fromhex(sys.stdin.readline())
     result = connection.recv(4096)
     while result and len(result) < len(expected) and int(proto) == socket.SOCK_STREAM:

@@ -1,5 +1,12 @@
 # 重建验收记录
 
+## 默认 TUN 的本地验收
+
+Linux 隔离网络实测覆盖新安装默认 `tun`、应用 UID 的 IPv4/IPv6 TCP 与 UDP 往返、客户端写半关闭后的回包、重复启停、第二个地址族的策略安装失败回滚，以及转发器退出时阻断直连。该测试使用本机合成上游，可通过 `tests/tun-netns.py` 重放。
+
+Android 10（API 29、x86_64、AOSP userdebug、SELinux enforcing）从 KAM ZIP 加载模块，使用 `/dev/tun` 建立 `magicnet0`。受控应用 UID 在同一来宾内向合成上游发送完整请求，关闭写端后仍能收到完整响应。停止后，接口消失，双栈策略规则恢复到启动前的状态。真实 ARM64 手机、蜂窝网络切换和 OEM 内核兼容性仍需设备验收。
+
+
 基线为 MagicNet v1.9.3 的公开产品行为清单。只依据外部可观察行为设计与比较。下列编号用于回溯原要求。原行包括多个成功和故障分支，只有全部有证据时才能将该项标为通过。[固定基线](https://github.com/LIghtJUNction/MagicNet/blob/ef24ce30de68f6e46d99f6c54736c004b372c71f/recipes/magicnet/ACCEPTANCE.md)
 
 ## 可验证的实现

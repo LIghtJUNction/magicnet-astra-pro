@@ -3,39 +3,10 @@ import argparse
 import os
 from pathlib import Path
 import re
-import socket
-import struct
-import threading
+import time
 
 from android_guest import Guest
-from android_tunnels import exact
 from routing_apps import installed_clients
-
-
-def tcp_peer(listener, observed):
-    try:
-        conn, _ = listener.accept()
-        with conn:
-            conn.settimeout(12)
-            assert exact(conn, 3) == b"\x05\x01\x00"
-            conn.sendall(b"\x05\x00")
-            assert exact(conn, 4) == b"\x05\x01\x00\x01"
-            host = socket.inet_ntoa(exact(conn, 4))
-            port = struct.unpack("!H", exact(conn, 2))[0]
-            observed.append(f"connect={host}:{port}")
-            assert (host, port) == ("8.8.4.4", 19437)
-            conn.sendall(bytes.fromhex("05000001000000000000"))
-            payload = b"test-uid-route\x00"
-            assert exact(conn, len(payload)) == payload
-            observed.append("payload=received")
-            # Echo without waiting for FIN to distinguish the return data
-            # path from implementations that defer a TCP half-close.
-            conn.sendall(payload)
-            observed.append("echo=sent")
-            if conn.recv(1) == b"":
-                observed.append("fin=received")
-    except (OSError, EOFError, AssertionError) as error:
-        observed.append(f"peer_error={error!r}")
 
 
 def exercise(serial, archive, busybox, probe):
@@ -59,31 +30,35 @@ def exercise(serial, archive, busybox, probe):
         # Even a failing probe cannot leave the emulator on a physical uplink.
         block = "OUTPUT ! -o magicnet0 -p tcp -d 8.8.4.4/32 --dport 19437 -j REJECT"
         g.sh("iptables -C " + block, success=False)
-        with installed_clients(g, str(probe)) as clients, socket.socket() as server:
+        with installed_clients(g, str(probe)) as clients:
             uid, route_probe = clients[0]
-            server.bind(("127.0.0.1", 0))
-            server.listen(1)
-            server.settimeout(18)
-            port = int(g.adb("reverse", "tcp:0", f"tcp:{server.getsockname()[1]}"))
+            g.adb("push", str(probe), g.path + "/peer")
+            g.sh(f"cd {g.path} && chmod 755 peer && "
+                 "(./peer --upstream </dev/null >peer.log 2>&1 & echo $! >peer.pid)")
             try:
+                for _ in range(40):
+                    port = g.sh(f"head -1 {g.path}/peer.log")
+                    if port.isdecimal() and 0 < int(port) <= 65535:
+                        break
+                    time.sleep(0.1)
+                else:
+                    raise RuntimeError("guest SOCKS fixture did not start")
                 g.sh("iptables -I " + block)
                 try:
                     g.sh(ctl + f"configure socks5://127.0.0.1:{port}")
                     g.sh(ctl + "start")
                     status = set(g.sh(ctl + "status").splitlines())
                     assert {"configured_mode=tun", "effective_mode=tun", "state=running"} <= status, status
-                    observed = []
-                    task = threading.Thread(target=tcp_peer, args=(server, observed), daemon=True)
-                    task.start()
-                    try:
-                        g.sh(route_probe)
-                    finally:
-                        task.join(20)
-                        print(f"UID {uid}: {observed}", flush=True)
-                    assert {"connect=8.8.4.4:19437", "payload=received", "echo=sent"} <= set(observed)
+                    # Both sockets belong to this guest. The synthetic upstream
+                    # waits for the application's FIN before returning its echo.
+                    g.sh(route_probe)
+                    evidence = g.sh(f"cat {g.path}/peer.log").splitlines()
+                    assert "ORIGINAL_DESTINATION_AND_FIN" in evidence, evidence
+                    print(f"UID {uid}: original target, request payload, FIN and return echo", flush=True)
                 except Exception as error:
                     error.add_note(g.sh(f"ip -4 rule show; ip -6 rule show; ip link show; "
-                                        f"cat {g.path}/state/tun.log {g.path}/state/core.log 2>/dev/null; true"))
+                                        f"cat {g.path}/peer.log {g.path}/state/tun.log "
+                                        f"{g.path}/state/core.log 2>/dev/null; true"))
                     raise
                 finally:
                     try:
@@ -91,7 +66,8 @@ def exercise(serial, archive, busybox, probe):
                     finally:
                         g.sh("iptables -D " + block)
             finally:
-                g.adb("reverse", "--remove", f"tcp:{port}")
+                g.sh(f'pid=$(cat {g.path}/peer.pid); '
+                     f'if [ "$(readlink /proc/$pid/exe)" = {g.path}/peer ]; then kill "$pid"; fi')
         assert baseline == [g.sh(f"ip {af} rule show") for af in families]
         assert "magicnet0" not in g.sh("ip link show")
         for af in families:
