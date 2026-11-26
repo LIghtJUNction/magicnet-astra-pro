@@ -41,5 +41,9 @@ ndk="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
 python3 tests/android_udp.py /data/local/tmp/mna-install/bin/magicbox "$RUNNER_TEMP/magicnet-udp-probe"
 "$ndk/x86_64-linux-android23-clang" -Os -Wall -Wextra -Werror tests/route-probe.c -o "$RUNNER_TEMP/magicnet-route-probe"
 python3 tests/android_traffic.py /data/local/tmp/mna-install "$RUNNER_TEMP/magicnet-route-probe"
+background_rc=0
+ASTRA_CI_BACKGROUND_CONTROL=1 python3 tests/android_tun_default.py --serial "$ANDROID_SERIAL" --archive dist/magicnet-x86_64.zip \
+    --busybox "$tools/busybox" --probe "$RUNNER_TEMP/magicnet-route-probe" || background_rc=$?
+echo "Background control exit: $background_rc"
 python3 tests/android_tun_default.py --serial "$ANDROID_SERIAL" --archive dist/magicnet-x86_64.zip \
     --busybox "$tools/busybox" --probe "$RUNNER_TEMP/magicnet-route-probe"

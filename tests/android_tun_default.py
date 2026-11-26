@@ -8,7 +8,7 @@ import re
 import time
 
 from android_guest import Guest
-from routing_apps import installed_clients
+from routing_apps import installed_clients, start_selected_activity
 
 
 def rules(g):
@@ -18,6 +18,41 @@ def rules(g):
 def diff_rules(before, after):
     return "\n".join(line for af in before for line in
                      unified_diff(before[af], after[af], f"{af} before", f"{af} after", lineterm=""))
+
+
+def tun_counters(g, cleanup):
+    # Targetless rules count TUN packets and continue normal traversal.
+    for tool in ("iptables", "ip6tables"):
+        for chain, direction in (("PREROUTING", "-i"), ("POSTROUTING", "-o")):
+            rule = f"{chain} {direction} magicnet0"
+            reply = g.sh(f"if {tool} -t mangle -I {rule}; then echo installed; fi")
+            if "installed" in reply.splitlines():
+                cleanup.callback(g.sh, f"{tool} -t mangle -D {rule}")
+
+
+def tun_snapshot(g, uid):
+    return g.sh(f"""
+        ip -s address show dev magicnet0
+        for af in -4 -6; do
+            echo "== $af rules and TUN routes =="
+            ip $af rule show; ip $af route show table 19871
+        done
+        echo '== IPv4 app UID route =='; ip -4 route get 8.8.4.4 uid {uid}
+        for f in /proc/sys/net/ipv4/conf/all/rp_filter /proc/sys/net/ipv4/conf/magicnet0/rp_filter; do
+            echo "$f"; cat "$f"
+        done
+        for tool in iptables ip6tables; do
+            for chain in PREROUTING POSTROUTING; do
+                echo "== $tool $chain TUN packet and byte counters =="
+                $tool -t mangle -nvxL "$chain" | grep -E 'pkts|magicnet0'
+            done
+        done
+        echo '== fixture bypass rejects =='; iptables -nvxL OUTPUT | grep -E 'pkts|19437'
+        for f in {g.path}/peer.log {g.path}/state/tun.log {g.path}/state/core.log; do
+            echo "== $f =="; tail -n 40 "$f"
+        done
+        true
+    """)
 
 
 def exercise(serial, archive, busybox, probe):
@@ -41,7 +76,7 @@ def exercise(serial, archive, busybox, probe):
         # Even a failing probe cannot leave the emulator on a physical uplink.
         block = "OUTPUT ! -o magicnet0 -p tcp -d 8.8.4.4/32 --dport 19437 -j REJECT"
         g.sh("iptables -C " + block, success=False)
-        with installed_clients(g, str(probe)) as clients, ExitStack() as sentinels:
+        with installed_clients(g, str(probe), selected_activity=True) as clients, ExitStack() as sentinels:
             after_install = rules(g)
             change = diff_rules(before_apks, after_install)
             if change:
@@ -70,18 +105,24 @@ def exercise(serial, archive, busybox, probe):
                         assert any(line.startswith("9801:") and "lookup 19878" in line for line in lines), lines
                     g.sh(ctl + f"configure socks5://127.0.0.1:{port}")
                     g.sh(ctl + "start")
+                    print(f"Fixture UID {uid} start state: " + g.sh(f"am get-uid-state {uid}"), flush=True)
+                    if not os.environ.get("ASTRA_CI_BACKGROUND_CONTROL"):
+                        start_selected_activity(g, uid)
                     status = set(g.sh(ctl + "status").splitlines())
                     assert {"configured_mode=tun", "effective_mode=tun", "state=running"} <= status, status
                     # Both sockets belong to this guest. The synthetic upstream
                     # waits for the application's FIN before returning its echo.
+                    tun_counters(g, sentinels)
+                    print("TUN counters before app socket:\n" + g.sh("ip -s link show dev magicnet0"), flush=True)
                     g.sh(route_probe)
                     evidence = g.sh(f"cat {g.path}/peer.log").splitlines()
                     assert "ORIGINAL_DESTINATION_AND_FIN" in evidence, evidence
                     print(f"UID {uid}: original target, request payload, FIN and return echo", flush=True)
                 except Exception as error:
-                    error.add_note(g.sh(f"ip -4 rule show; ip -6 rule show; ip link show; "
-                                        f"cat {g.path}/peer.log {g.path}/state/tun.log "
-                                        f"{g.path}/state/core.log 2>/dev/null; true"))
+                    try:
+                        error.add_note(tun_snapshot(g, uid))
+                    except Exception as diagnostic_error:
+                        error.add_note(f"Failed to capture TUN diagnostics: {diagnostic_error}")
                     raise
                 finally:
                     try:

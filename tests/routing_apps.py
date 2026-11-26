@@ -4,11 +4,25 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import time
 import zipfile
 
 
+def start_selected_activity(guest, uid):
+    component = "org.magicnet.trafficfixture.selected/android.app.Activity"
+    previous = guest.sh(f"am get-uid-state {uid}")
+    launched = guest.sh(f"am start -W -n {component}")
+    for _ in range(25):
+        state = guest.sh(f"am get-uid-state {uid}")
+        if state == "2 (TOP)":
+            print(f"Foreground fixture UID {uid}: {previous} -> {state}", flush=True)
+            return
+        time.sleep(0.2)
+    raise RuntimeError(f"UID {uid} did not enter TOP: {previous} -> {state}\n{launched}")
+
+
 @contextmanager
-def installed_clients(guest, probe):
+def installed_clients(guest, probe, *, selected_activity=False):
     # The INTERNET permission and allocated app UID must exist in PackageManager
     # so Android's socket permission checks see the same identity as real apps.
     sdk = Path(os.environ["ANDROID_HOME"])
@@ -30,11 +44,16 @@ def installed_clients(guest, probe):
         for name in ("selected", "other"):
             package = "org.magicnet.trafficfixture." + name
             manifest = directory / "AndroidManifest.xml"
+            activity = ('<activity android:name="android.app.Activity" android:exported="true" '
+                        'android:showWhenLocked="true" android:turnScreenOn="true"/>'
+                        if selected_activity and name == "selected" else "")
             manifest.write_text(f'''<manifest xmlns:android="http://schemas.android.com/apk/res/android"
                     package="{package}" android:versionCode="1" android:versionName="1">
                 <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="35"/>
                 <uses-permission android:name="android.permission.INTERNET"/>
-                <application android:debuggable="true" android:hasCode="false" android:extractNativeLibs="true"/>
+                <application android:debuggable="true" android:hasCode="false" android:extractNativeLibs="true">
+                    {activity}
+                </application>
             </manifest>''')
             unsigned = directory / (name + "-unsigned.apk")
             signed = directory / (name + ".apk")
